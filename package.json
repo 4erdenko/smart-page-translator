@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "A cross-browser, cached AI page translator for Firefox and Chrome.",
+  "license": "MPL-2.0",
   "scripts": {
     "build": "npm run build:firefox && npm run build:chrome",
     "build:chrome": "node scripts/build.mjs --target chrome",

@@ -13,6 +13,16 @@ Cross-browser Manifest V3 WebExtension for complete, cached website translation.
 - Reuses translations from a persistent, LRU-style local cache.
 - Keeps private/incognito page text out of persistent storage and offers one-time translation for those tabs.
 
+## Browser support
+
+- Firefox 142 or later.
+- Chrome 102 or later.
+- Other Chromium-based browsers may work but are not part of the release checks.
+
+## Install
+
+Signed store packages are not published yet. Official Firefox and Chrome store links will be added here after review and signing. Until then, use the development installation below. Files in `artifacts/` are unsigned test packages and should not be redistributed as official releases.
+
 ## Install for development
 
 ```bash
@@ -73,5 +83,13 @@ When translation is active, non-editable page text is sent directly to the selec
 See [PRIVACY.md](PRIVACY.md) for the complete data-flow summary and [SECURITY.md](SECURITY.md) for secret-handling guidance.
 
 Before publishing a release, follow [docs/STORE_SUBMISSION.md](docs/STORE_SUBMISSION.md). Shipped third-party code is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Support and security
+
+Use the repository bug-report template for reproducible, sanitized problems. Never include API keys, private URLs, account details, or captured page content. Report vulnerabilities through GitHub private vulnerability reporting as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+Smart Page Translator is available under the [Mozilla Public License 2.0](LICENSE). Third-party components remain under their respective licenses.
 
 Implementation references: [Firefox WebExtensions compatibility](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Chrome_incompatibilities), [Firefox add-on policies](https://extensionworkshop.com/documentation/publish/add-on-policies/), [Chrome extension service workers](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/basics), [Chrome Web Store policies](https://developer.chrome.com/docs/webstore/program-policies/policies), [DeepSeek models API](https://api-docs.deepseek.com/api/list-models), and [OpenAI models](https://developers.openai.com/api/docs/models).

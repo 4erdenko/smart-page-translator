@@ -14,3 +14,7 @@ Use short Conventional Commit messages such as `feat: add provider model discove
 API keys must be entered through the extension Settings UI. Never add build-time keys, fixtures containing live secrets, or environment-based credential loading.
 
 Use reserved example domains and fictional names in tests, screenshots, and documentation. Never commit captured storefront data, personal profiles, local filesystem paths, browser state, or provider responses from a real account.
+
+## Licensing
+
+By contributing, you agree that your contribution is provided under the Mozilla Public License 2.0.

@@ -4,6 +4,9 @@ All notable changes will be documented in this file.
 
 ## Unreleased
 
+## 0.1.0 - 2026-07-24
+
+- Licensed the project under MPL-2.0 and included project and third-party notices in release packages.
 - Removed storefront-specific and personal examples from source and tests.
 - Limited background network permissions to the supported provider APIs and added an explicit extension-page CSP.
 - Prevented private/incognito translations and website choices from entering persistent storage.

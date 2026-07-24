@@ -19,6 +19,11 @@ const referencedFiles = new Set([
   manifest.options_ui.page,
   ...Object.values(manifest.icons)
 ]);
+const releaseNoticeFiles = [
+  "LICENSE",
+  "THIRD_PARTY_NOTICES.md",
+  "vendor/LICENSE.webextension-polyfill.txt"
+];
 
 if (manifest.manifest_version !== 3) {
   throw new Error("Expected Manifest V3.");
@@ -69,4 +74,16 @@ if (target === "firefox") {
 }
 
 await Promise.all([...referencedFiles].map((file) => access(path.join(outputDirectory, file))));
-console.log(`${target} manifest check passed with ${referencedFiles.size} referenced files.`);
+await Promise.all(releaseNoticeFiles.map((file) => access(path.join(outputDirectory, file))));
+const [sourceLicense, packagedLicense] = await Promise.all([
+  readFile(path.join(projectRoot, "LICENSE"), "utf8"),
+  readFile(path.join(outputDirectory, "LICENSE"), "utf8")
+]);
+
+if (sourceLicense !== packagedLicense) {
+  throw new Error("The packaged project license must match the repository license.");
+}
+
+console.log(
+  `${target} manifest check passed with ${referencedFiles.size} referenced files and release notices.`
+);

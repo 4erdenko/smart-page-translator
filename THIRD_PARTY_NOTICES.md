@@ -1,5 +1,7 @@
 # Third-Party Notices
 
+Smart Page Translator is licensed under the Mozilla Public License 2.0. This document lists code distributed with the extension under a separate upstream copyright.
+
 The packaged extension includes:
 
 ## webextension-polyfill

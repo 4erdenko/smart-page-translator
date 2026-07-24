@@ -54,6 +54,14 @@ await cp(
   path.join(projectRoot, "node_modules", "webextension-polyfill", "LICENSE"),
   path.join(outputDirectory, "vendor", "LICENSE.webextension-polyfill.txt")
 );
+await cp(
+  path.join(projectRoot, "LICENSE"),
+  path.join(outputDirectory, "LICENSE")
+);
+await cp(
+  path.join(projectRoot, "THIRD_PARTY_NOTICES.md"),
+  path.join(outputDirectory, "THIRD_PARTY_NOTICES.md")
+);
 
 if (target === "firefox") {
   await rm(path.join(outputDirectory, "service-worker.js"));
