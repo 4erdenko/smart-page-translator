@@ -4,6 +4,10 @@ All notable changes will be documented in this file.
 
 ## Unreleased
 
+- Documented Chrome Web Store Limited Use and explicit pre-install consent requirements.
+- Added deterministic source packaging, allowlisted browser builds, and reviewer-ready third-party source links.
+- Updated the development lint dependency tree to remove a high-severity brace-expansion advisory.
+
 ## 0.1.0 - 2026-07-24
 
 - Licensed the project under MPL-2.0 and included project and third-party notices in release packages.

@@ -15,6 +15,8 @@ API keys must be entered through the extension Settings UI. Never add build-time
 
 Use reserved example domains and fictional names in tests, screenshots, and documentation. Never commit captured storefront data, personal profiles, local filesystem paths, browser state, or provider responses from a real account.
 
+The npm override for `minimatch` keeps Mozilla's `addons-linter` on the patched `brace-expansion` dependency line. Keep it until `addons-linter` ships a non-vulnerable dependency tree; validate any removal with both `npm audit` and `npm run lint:firefox`.
+
 ## Licensing
 
 By contributing, you agree that your contribution is provided under the Mozilla Public License 2.0.

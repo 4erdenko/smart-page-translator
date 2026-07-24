@@ -7,8 +7,9 @@
 - Scan the current tree and complete Git history for credentials, personal data, local paths, captured pages, and site-specific fixtures.
 - Verify `git status` contains no generated builds, browser profiles, IDE state, or local-only files.
 - Test translation, restoration, SPA navigation, private browsing, settings, and the popup in current Firefox and Chrome.
-- Add the real repository, homepage, and issue-tracker URLs to `package.json` after the public remote exists.
+- Verify that the repository, homepage, and issue-tracker URLs in `package.json` match the public remote.
 - Enable GitHub private vulnerability reporting and publish `PRIVACY.md` at a stable public URL.
+- Confirm the hosted privacy notice contains the Chrome Web Store Limited Use compliance statement.
 
 ## Firefox
 
@@ -16,7 +17,9 @@
 - Keep the stable Gecko ID and increment the manifest version.
 - Declare `authenticationInfo` and `websiteContent` as required data collection because the user-supplied key and selected page text go directly to the chosen provider.
 - Explain the all-sites content script, provider-only host permissions, local cache, and private-browsing behavior in the AMO listing.
-- Submit readable source with the lockfile and these build instructions when Mozilla requests source.
+- Run `npm run package:source` and upload the resulting source ZIP when Mozilla requests source.
+- Tell reviewers to run `npm ci` followed by `npm run build:firefox` with Node.js 24 and npm 11.
+- Include the exact upstream release and source links from `THIRD_PARTY_NOTICES.md` in reviewer notes.
 
 ## Chrome
 
@@ -24,6 +27,7 @@
 - State the single purpose as whole-page translation.
 - Justify all-sites content-script access and `unlimitedStorage`; do not request unrelated permissions.
 - Link the hosted `PRIVACY.md` from the Chrome Web Store listing and complete its data-use disclosures consistently.
+- Prominently disclose page-text and credential transmission before installation and obtain affirmative informed consent.
 
 ## Release artifacts
 

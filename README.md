@@ -51,6 +51,7 @@ Open the extension Settings, select DeepSeek or OpenAI, enter that provider's ke
 - `npm run build` — create both `dist/firefox/` and `dist/chrome/`.
 - `npm run check` — run the complete CI-equivalent validation, including Mozilla's add-on linter.
 - `npm run package:firefox` / `npm run package:chrome` — create reproducible ZIP files in `artifacts/`.
+- `npm run package:source` — create a deterministic review-source ZIP from tracked Git files.
 
 The shared manifest lives in `manifests/base.json`; browser-specific background declarations live in `manifests/firefox.json` and `manifests/chrome.json`. Firefox uses background scripts, while Chrome uses `src/service-worker.js`. Mozilla's `webextension-polyfill` keeps the Promise-based `browser.*` API consistent.
 
@@ -83,6 +84,8 @@ When translation is active, non-editable page text is sent directly to the selec
 See [PRIVACY.md](PRIVACY.md) for the complete data-flow summary and [SECURITY.md](SECURITY.md) for secret-handling guidance.
 
 Before publishing a release, follow [docs/STORE_SUBMISSION.md](docs/STORE_SUBMISSION.md). Shipped third-party code is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+For a Mozilla source review, use Node.js 24 and npm 11, run `npm ci`, then run `npm run build:firefox`. The generated `dist/firefox/` directory is the unpacked equivalent of the Firefox release ZIP. `npm run package:source` creates the corresponding source submission from tracked files and fails if non-ignored files remain untracked.
 
 ## Support and security
 

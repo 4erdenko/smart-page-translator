@@ -14,6 +14,10 @@ Private/incognito page text and translations bypass the persistent cache. The po
 
 The extension contacts only the selected provider for model discovery and translation. The project maintainers do not operate a translation proxy and do not receive page text or provider keys. The extension does not sell or share data with any additional party.
 
+## Limited Use
+
+Smart Page Translator's use and transfer of user data complies with the Chrome Web Store User Data Policy, including its Limited Use requirements. Page text, short DOM context, and protected brand terms are used only to provide whole-page translation and user-controlled caching. Provider credentials are used only to authenticate requests to the selected translation provider. This data is not used for advertising, profiling, creditworthiness, or any unrelated purpose.
+
 ## Privacy questions
 
 For a non-sensitive privacy question, open a repository issue without including page content, private URLs, account details, or credentials. Use GitHub private vulnerability reporting from the repository **Security** tab when a report contains sensitive information or describes unintended data exposure.

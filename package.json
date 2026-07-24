@@ -4,6 +4,14 @@
   "private": true,
   "description": "A cross-browser, cached AI page translator for Firefox and Chrome.",
   "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/4erdenko/smart-page-translator.git"
+  },
+  "homepage": "https://github.com/4erdenko/smart-page-translator#readme",
+  "bugs": {
+    "url": "https://github.com/4erdenko/smart-page-translator/issues"
+  },
   "scripts": {
     "build": "npm run build:firefox && npm run build:chrome",
     "build:chrome": "node scripts/build.mjs --target chrome",
@@ -14,6 +22,7 @@
     "lint:firefox": "addons-linter dist/firefox --warnings-as-errors",
     "package:chrome": "npm run check && node scripts/package.mjs --target chrome",
     "package:firefox": "npm run check && node scripts/package.mjs --target firefox",
+    "package:source": "npm run check && node scripts/package.mjs --target source",
     "test": "node --test"
   },
   "engines": {
@@ -22,10 +31,14 @@
   "dependencies": {
     "webextension-polyfill": "0.12.0"
   },
+  "overrides": {
+    "brace-expansion@5.0.7": "5.0.8",
+    "minimatch@3.1.5": "9.0.8"
+  },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "addons-linter": "10.9.0",
-    "eslint": "10.7.0",
+    "eslint": "10.8.0",
     "globals": "17.7.0",
     "jszip": "3.10.1"
   }

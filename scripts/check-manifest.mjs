@@ -1,6 +1,7 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getReleaseSourceFiles } from "./build.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const targetIndex = process.argv.indexOf("--target");
@@ -24,6 +25,32 @@ const releaseNoticeFiles = [
   "THIRD_PARTY_NOTICES.md",
   "vendor/LICENSE.webextension-polyfill.txt"
 ];
+const expectedPackageFiles = new Set([
+  ...getReleaseSourceFiles(target),
+  ...releaseNoticeFiles,
+  "manifest.json",
+  "vendor/browser-polyfill.js"
+]);
+
+async function listPackageFiles(directory, relativeDirectory = "") {
+  const files = [];
+  const entries = await readdir(directory, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const absolutePath = path.join(directory, entry.name);
+    const relativePath = path.posix.join(relativeDirectory, entry.name);
+
+    if (entry.isDirectory()) {
+      files.push(...await listPackageFiles(absolutePath, relativePath));
+    } else if (entry.isFile()) {
+      files.push(relativePath);
+    } else {
+      throw new Error(`Package contains an unsupported filesystem entry: ${relativePath}`);
+    }
+  }
+
+  return files;
+}
 
 if (manifest.manifest_version !== 3) {
   throw new Error("Expected Manifest V3.");
@@ -75,6 +102,17 @@ if (target === "firefox") {
 
 await Promise.all([...referencedFiles].map((file) => access(path.join(outputDirectory, file))));
 await Promise.all(releaseNoticeFiles.map((file) => access(path.join(outputDirectory, file))));
+const packageFiles = new Set(await listPackageFiles(outputDirectory));
+const missingPackageFiles = [...expectedPackageFiles].filter((file) => !packageFiles.has(file));
+const unexpectedPackageFiles = [...packageFiles].filter((file) => !expectedPackageFiles.has(file));
+
+if (missingPackageFiles.length || unexpectedPackageFiles.length) {
+  throw new Error(
+    `Package allowlist mismatch. Missing: ${missingPackageFiles.join(", ") || "none"}. `
+    + `Unexpected: ${unexpectedPackageFiles.join(", ") || "none"}.`
+  );
+}
+
 const [sourceLicense, packagedLicense] = await Promise.all([
   readFile(path.join(projectRoot, "LICENSE"), "utf8"),
   readFile(path.join(outputDirectory, "LICENSE"), "utf8")

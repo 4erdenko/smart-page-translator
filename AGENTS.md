@@ -12,7 +12,8 @@ Shared and browser-specific manifests live in `manifests/`. `scripts/build.mjs` 
 - `npm run lint` checks JavaScript with ESLint.
 - `npm run build` creates both browser targets.
 - `npm run check` runs lint, tests, manifest validation, both builds, and Mozilla add-on validation.
-- `npm run package:firefox` or `npm run package:chrome` writes a ZIP to `artifacts/`.
+- `npm run package:firefox` or `npm run package:chrome` writes a browser ZIP to `artifacts/`.
+- `npm run package:source` writes a deterministic public-source ZIP for Mozilla review.
 
 Load `dist/firefox/manifest.json` from `about:debugging`, or load `dist/chrome/` unpacked from `chrome://extensions`.
 
