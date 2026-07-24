@@ -1,0 +1,72 @@
+import { access, readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const targetIndex = process.argv.indexOf("--target");
+const target = targetIndex >= 0 ? process.argv[targetIndex + 1] : "firefox";
+const outputDirectory = path.join(projectRoot, "dist", target);
+const manifest = JSON.parse(await readFile(path.join(outputDirectory, "manifest.json"), "utf8"));
+const backgroundFiles = manifest.background.scripts || [manifest.background.service_worker];
+const actionIconFiles = typeof manifest.action.default_icon === "string"
+  ? [manifest.action.default_icon]
+  : Object.values(manifest.action.default_icon);
+const referencedFiles = new Set([
+  ...backgroundFiles,
+  ...manifest.content_scripts.flatMap(({ js }) => js),
+  manifest.action.default_popup,
+  ...actionIconFiles,
+  manifest.options_ui.page,
+  ...Object.values(manifest.icons)
+]);
+
+if (manifest.manifest_version !== 3) {
+  throw new Error("Expected Manifest V3.");
+}
+
+const expectedHostPermissions = [
+  "https://api.deepseek.com/*",
+  "https://api.openai.com/*"
+];
+
+if (JSON.stringify(manifest.host_permissions) !== JSON.stringify(expectedHostPermissions)) {
+  throw new Error("Host permissions must be limited to the supported provider APIs.");
+}
+
+if (!manifest.content_scripts?.some(({ matches }) => matches?.includes("<all_urls>"))) {
+  throw new Error("Whole-page translation requires an all-URLs content script match.");
+}
+
+if (manifest.content_security_policy?.extension_pages !== "script-src 'self'; object-src 'none'") {
+  throw new Error("Extension pages must use the repository's restrictive Content Security Policy.");
+}
+
+if (target === "firefox") {
+  if (!manifest.background.scripts || manifest.background.service_worker) {
+    throw new Error("Firefox must use background.scripts.");
+  }
+
+  const disclosures = manifest.browser_specific_settings?.gecko?.data_collection_permissions?.required || [];
+
+  if (!disclosures.includes("authenticationInfo") || !disclosures.includes("websiteContent")) {
+    throw new Error("Firefox authenticationInfo or websiteContent data collection disclosure is missing.");
+  }
+
+  if (!/^\{[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\}$/iu.test(
+    manifest.browser_specific_settings?.gecko?.id || ""
+  )) {
+    throw new Error("Firefox signing requires a stable, non-personal extension ID.");
+  }
+
+  await access(path.join(outputDirectory, "service-worker.js")).then(
+    () => {
+      throw new Error("The Firefox package must not contain the unused Chrome service worker.");
+    },
+    () => undefined
+  );
+} else if (!manifest.background.service_worker || manifest.background.scripts) {
+  throw new Error("Chrome must use a single background.service_worker.");
+}
+
+await Promise.all([...referencedFiles].map((file) => access(path.join(outputDirectory, file))));
+console.log(`${target} manifest check passed with ${referencedFiles.size} referenced files.`);

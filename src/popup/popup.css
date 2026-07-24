@@ -1,0 +1,267 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1d1d1f;
+  background: #f5f5f7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 370px;
+  margin: 0;
+  background:
+    radial-gradient(circle at 88% -12%, rgba(10, 132, 255, 0.2), transparent 44%),
+    #f5f5f7;
+}
+
+.panel {
+  padding: 18px;
+}
+
+.header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 11px;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.header img {
+  filter: drop-shadow(0 8px 12px rgba(42, 31, 145, 0.2));
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+
+.header p {
+  max-width: 210px;
+  margin-top: 2px;
+  overflow: hidden;
+  color: #77738b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-orb {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(16px);
+}
+
+.activity-orb i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #8e8e93;
+  box-shadow: 0 0 0 0 rgba(10, 132, 255, 0);
+  transition: 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body[data-tone="working"] .activity-orb i {
+  background: #0a84ff;
+  box-shadow: 0 0 0 6px rgba(10, 132, 255, 0.12);
+  animation: pulse 760ms ease-in-out infinite alternate;
+}
+
+body[data-tone="success"] .activity-orb i {
+  background: #30d158;
+}
+
+body[data-tone="error"] .activity-orb i {
+  background: #ff453a;
+}
+
+.card {
+  padding: 15px;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.07);
+  backdrop-filter: blur(22px) saturate(1.12);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.field + .field {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+select {
+  min-width: 176px;
+  padding: 8px 28px 8px 10px;
+  border: 1px solid #dfdce9;
+  border-radius: 10px;
+  color: #1d1d1f;
+  background: #f8f8fa;
+  font: inherit;
+}
+
+.status {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  min-height: 57px;
+  margin-top: 14px;
+  padding: 11px;
+  border-radius: 12px;
+  background: #f4f2fb;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #9894a7;
+}
+
+.status[data-tone="working"] .status-dot {
+  background: #0a84ff;
+  box-shadow: 0 0 0 5px rgba(10, 132, 255, 0.13);
+  animation: pulse 1s infinite alternate;
+}
+
+.status[data-tone="success"] .status-dot {
+  background: #1caa78;
+}
+
+.status[data-tone="error"] {
+  color: #8b2336;
+  background: #fff0f2;
+}
+
+.status[data-tone="error"] .status-dot {
+  background: #c9344a;
+}
+
+.status strong {
+  font-size: 12px;
+}
+
+.status p {
+  margin-top: 3px;
+  color: #716d83;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.status[data-tone="error"] p {
+  color: #9d4655;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.metrics div {
+  padding: 9px 6px;
+  border-radius: 11px;
+  text-align: center;
+  background: #faf9fd;
+}
+
+.metrics strong,
+.metrics span {
+  display: block;
+}
+
+.metrics strong {
+  font-size: 14px;
+}
+
+.metrics span {
+  margin-top: 2px;
+  color: #898597;
+  font-size: 9px;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+button {
+  min-height: 39px;
+  border: 0;
+  border-radius: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.primary {
+  color: #fff;
+  background: #0071e3;
+}
+
+.primary:hover:not(:disabled) {
+  background: #0077ed;
+}
+
+.secondary {
+  padding-inline: 15px;
+  color: #393451;
+  background: #e9e7f0;
+}
+
+.footnote {
+  margin-top: 10px;
+  color: #8b8798;
+  font-size: 10px;
+  text-align: center;
+}
+
+@keyframes pulse {
+  to {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}

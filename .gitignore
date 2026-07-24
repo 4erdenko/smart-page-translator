@@ -1,0 +1,8 @@
+.env
+.idea/
+dist/
+artifacts/
+node_modules/
+*.xpi
+*.zip
+.DS_Store

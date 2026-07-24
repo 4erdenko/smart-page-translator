@@ -1,0 +1,22 @@
+{
+  "background": {
+    "scripts": [
+      "vendor/browser-polyfill.js",
+      "lib/translation-core.js",
+      "lib/provider-core.js",
+      "background.js"
+    ]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{e7adb0a7-b0a9-42e3-ba0f-75ae676ccc7a}",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": [
+          "authenticationInfo",
+          "websiteContent"
+        ]
+      }
+    }
+  }
+}

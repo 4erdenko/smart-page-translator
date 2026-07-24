@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Smart Page Translator Settings</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <img src="../assets/icon.svg" alt="" width="64" height="64">
+        <div>
+          <p class="eyebrow">WebExtensions</p>
+          <h1>Smart Page Translator</h1>
+          <p>Accurate whole-page translation with persistent local caching.</p>
+        </div>
+      </header>
+
+      <form id="settingsForm" class="settings">
+        <section class="card">
+          <div class="section-heading">
+            <div>
+              <h2>Translation provider</h2>
+              <p>Choose a provider, store its key locally, then load the models available to your account.</p>
+            </div>
+            <span id="keyBadge" class="badge">Checking</span>
+          </div>
+
+          <div class="provider-grid">
+            <label class="field" for="provider">
+              <span>Provider</span>
+              <select id="provider">
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </label>
+
+            <label class="field" for="model">
+              <span>Model</span>
+              <select id="model"></select>
+            </label>
+          </div>
+
+          <label class="field key-field" for="apiKey">
+            <span>API key</span>
+            <input id="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Leave blank to keep the current key">
+            <small id="keyHint">The key is stored only in local extension storage and is never displayed again.</small>
+          </label>
+
+          <div class="inline-actions">
+            <button id="refreshModelsButton" class="secondary" type="button">Load models</button>
+            <button id="testButton" class="secondary" type="button">Test connection</button>
+            <button id="clearKeyButton" class="ghost" type="button">Remove key</button>
+          </div>
+        </section>
+
+        <section class="card grid-card">
+          <div class="section-heading full-width">
+            <div>
+              <h2>Translation</h2>
+              <p>The selected provider and model apply to every translated website.</p>
+            </div>
+          </div>
+
+          <label class="field" for="sourceLanguage">
+            <span>Source language</span>
+            <select id="sourceLanguage">
+              <option value="auto">Detect automatically</option>
+              <option value="en">English</option>
+              <option value="pt">Portuguese</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="it">Italian</option>
+              <option value="nl">Dutch</option>
+              <option value="uk">Ukrainian</option>
+              <option value="pl">Polish</option>
+              <option value="ru">Russian</option>
+            </select>
+          </label>
+
+          <label class="field" for="targetLanguage">
+            <span>Target language</span>
+            <select id="targetLanguage">
+              <option value="ru">Russian</option>
+              <option value="en">English</option>
+              <option value="pt">Portuguese</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="it">Italian</option>
+              <option value="nl">Dutch</option>
+              <option value="uk">Ukrainian</option>
+              <option value="pl">Polish</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="card automation-card">
+          <div class="section-heading">
+            <div>
+              <h2>Automatic translation</h2>
+              <p>Choose source languages and exact websites that should translate without another click.</p>
+            </div>
+            <span class="badge">Local rules</span>
+          </div>
+
+          <fieldset class="language-rules">
+            <legend>Translate these languages automatically</legend>
+            <div class="language-grid">
+              <label><input type="checkbox" name="autoTranslateLanguage" value="en"><span>English</span></label>
+              <label><input type="checkbox" name="autoTranslateLanguage" value="pt"><span>Portuguese</span></label>
+              <label><input type="checkbox" name="autoTranslateLanguage" value="es"><span>Spanish</span></label>
+              <label><input type="checkbox" name="autoTranslateLanguage" value="fr"><span>French</span></label>
+              <label><input type="checkbox" name="autoTranslateLanguage" value="de"><span>German</span></label>
+              <label><input type="checkbox" name="autoTranslateLanguage" value="it"><span>Italian</span></label>
+              <label><input type="checkbox" name="autoTranslateLanguage" value="nl"><span>Dutch</span></label>
+              <label><input type="checkbox" name="autoTranslateLanguage" value="pl"><span>Polish</span></label>
+              <label><input type="checkbox" name="autoTranslateLanguage" value="uk"><span>Ukrainian</span></label>
+              <label><input type="checkbox" name="autoTranslateLanguage" value="ru"><span>Russian</span></label>
+            </div>
+            <small>Detection runs locally in the browser. Page text is sent to the selected provider only after a rule matches.</small>
+          </fieldset>
+
+          <div class="site-rule-grid">
+            <label class="field" for="alwaysSites">
+              <span>Always translate websites</span>
+              <textarea id="alwaysSites" rows="5" placeholder="shop.example.com&#10;https://news.example.org"></textarea>
+              <small>One domain or origin per line. All paths on that origin are included.</small>
+            </label>
+
+            <label class="field" for="neverSites">
+              <span>Never translate websites</span>
+              <textarea id="neverSites" rows="5" placeholder="bank.example.com"></textarea>
+              <small>These rules override automatic language detection.</small>
+            </label>
+          </div>
+
+          <label class="motion-setting" for="animationEnabled">
+            <span>
+              <strong>Text shimmer</strong>
+              <small>Briefly highlight only text that has just been translated.</small>
+            </span>
+            <input id="animationEnabled" type="checkbox">
+            <i aria-hidden="true"></i>
+          </label>
+        </section>
+
+        <section class="card">
+          <div class="section-heading">
+            <div>
+              <h2>Local cache</h2>
+              <p>Identical phrases are reused without another API request.</p>
+            </div>
+            <strong id="cacheCount">0 entries</strong>
+          </div>
+
+          <label class="field" for="cacheMaxEntries">
+            <span>Maximum cached phrases</span>
+            <input id="cacheMaxEntries" type="number" min="100" max="20000" step="100">
+            <small>Default: 8,000 phrases, roughly 64,000 source words. Hard limits: 20,000 phrases and 16 MiB.</small>
+          </label>
+
+          <button id="clearCacheButton" class="ghost danger" type="button">Clear translation cache</button>
+        </section>
+
+        <section class="privacy">
+          <strong>Privacy note</strong>
+          <p>When you enable a website, its non-editable text is sent to the selected provider for translation. Form values and editable text are deliberately skipped.</p>
+        </section>
+
+        <div class="save-row">
+          <p id="saveStatus" role="status"></p>
+          <button class="primary" type="submit">Save settings</button>
+        </div>
+      </form>
+    </main>
+    <script src="../vendor/browser-polyfill.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>
