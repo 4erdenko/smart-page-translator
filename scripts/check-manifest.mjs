@@ -52,6 +52,28 @@ async function listPackageFiles(directory, relativeDirectory = "") {
   return files;
 }
 
+async function listMissingHtmlResources(packageFiles) {
+  const missingResources = [];
+
+  for (const htmlFile of [...packageFiles].filter((file) => file.endsWith(".html"))) {
+    const html = await readFile(path.join(outputDirectory, htmlFile), "utf8");
+
+    for (const [, resource] of html.matchAll(/\b(?:href|src)\s*=\s*["']([^"'#]+)["']/giu)) {
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/iu.test(resource)) {
+        continue;
+      }
+
+      const resourcePath = path.posix.normalize(path.posix.join(path.posix.dirname(htmlFile), resource));
+
+      if (!packageFiles.has(resourcePath)) {
+        missingResources.push(`${htmlFile} -> ${resourcePath}`);
+      }
+    }
+  }
+
+  return missingResources;
+}
+
 if (manifest.manifest_version !== 3) {
   throw new Error("Expected Manifest V3.");
 }
@@ -105,11 +127,13 @@ await Promise.all(releaseNoticeFiles.map((file) => access(path.join(outputDirect
 const packageFiles = new Set(await listPackageFiles(outputDirectory));
 const missingPackageFiles = [...expectedPackageFiles].filter((file) => !packageFiles.has(file));
 const unexpectedPackageFiles = [...packageFiles].filter((file) => !expectedPackageFiles.has(file));
+const missingHtmlResources = await listMissingHtmlResources(packageFiles);
 
-if (missingPackageFiles.length || unexpectedPackageFiles.length) {
+if (missingPackageFiles.length || unexpectedPackageFiles.length || missingHtmlResources.length) {
   throw new Error(
     `Package allowlist mismatch. Missing: ${missingPackageFiles.join(", ") || "none"}. `
-    + `Unexpected: ${unexpectedPackageFiles.join(", ") || "none"}.`
+    + `Unexpected: ${unexpectedPackageFiles.join(", ") || "none"}. `
+    + `Missing HTML resources: ${missingHtmlResources.join(", ") || "none"}.`
   );
 }
 

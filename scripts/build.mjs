@@ -10,6 +10,7 @@ const sharedSourceFiles = Object.freeze([
   "assets/icon-48.png",
   "assets/icon-96.png",
   "assets/icon-128.png",
+  "assets/icon.svg",
   "background.js",
   "content.js",
   "lib/dom-core.js",
