@@ -11,6 +11,7 @@
     apiItemCount: document.querySelector("#apiItemCount"),
     cacheHitCount: document.querySelector("#cacheHitCount"),
     cacheSummary: document.querySelector("#cacheSummary"),
+    pdfButton: document.querySelector("#pdfButton"),
     settingsButton: document.querySelector("#settingsButton"),
     siteLabel: document.querySelector("#siteLabel"),
     siteMode: document.querySelector("#siteMode"),
@@ -20,11 +21,11 @@
     targetLanguage: document.querySelector("#targetLanguage"),
     translateButton: document.querySelector("#translateButton"),
     translatedCount: document.querySelector("#translatedCount"),
-    viewButton: document.querySelector("#viewButton")
+    viewModeButtons: [...document.querySelectorAll("[data-view-mode]")],
+    viewModes: document.querySelector("#viewModes")
   };
   fillLanguageSelect(elements.targetLanguage);
   let activeTab;
-  let currentStatus;
   let site = "";
   let privateTab = false;
   let apiConfigured = true;
@@ -55,13 +56,14 @@
   }
 
   function updateActions(status) {
-    const translatedView = status?.viewMode !== "original";
-    const canToggleView = Boolean(status?.enabled)
-      && (status?.translatedElements > 0 || !translatedView);
-    elements.viewButton.hidden = !canToggleView;
-    elements.viewButton.textContent = translatedView
-      ? t("showOriginal", null, "Show original")
-      : t("showTranslation", null, "Show translation");
+    const canChangeView = Boolean(status?.enabled)
+      && (status?.translatedElements > 0 || status?.viewMode === "original");
+    elements.viewModes.hidden = !canChangeView;
+
+    for (const button of elements.viewModeButtons) {
+      button.setAttribute("aria-pressed", String(button.dataset.viewMode === status?.viewMode));
+    }
+
     elements.translateButton.hidden = Boolean(status?.enabled && !status?.error);
     elements.translateButton.disabled = !site || !apiConfigured;
     elements.translateButton.textContent = status?.error
@@ -70,7 +72,6 @@
   }
 
   function renderPageStatus(status) {
-    currentStatus = status || null;
     elements.translatedCount.textContent = String(status?.translatedElements || 0);
     elements.cacheHitCount.textContent = String(status?.cacheHits || 0);
     elements.apiItemCount.textContent = String(status?.apiItems || 0);
@@ -107,17 +108,7 @@
       ? getLanguageName(status.detectedLanguage)
       : t("pageLanguage", null, "the page language");
 
-    if (status.viewMode === "original") {
-      showStatus(
-        t("showingOriginal", null, "Showing original"),
-        t(
-          "showingOriginalDetails",
-          null,
-          "Translation remains ready and can be restored from the local cache."
-        ),
-        "idle"
-      );
-    } else if (status.error) {
+    if (status.error) {
       showStatus(t("translationStopped", null, "Translation stopped"), status.error, "error");
     } else if (status.translating) {
       showStatus(
@@ -128,6 +119,26 @@
           `${language} text is being processed in parallel.`
         ),
         "working"
+      );
+    } else if (status.viewMode === "original") {
+      showStatus(
+        t("showingOriginal", null, "Showing original"),
+        t(
+          "showingOriginalDetails",
+          null,
+          "Translation remains ready and can be restored from the local cache."
+        ),
+        "idle"
+      );
+    } else if (status.viewMode === "bilingual" && status.enabled && status.translatedElements > 0) {
+      showStatus(
+        t("bilingualViewActive", null, "Bilingual view"),
+        t(
+          "bilingualViewDetails",
+          null,
+          "Original and translated page text are shown together."
+        ),
+        "success"
       );
     } else if (status.enabled && status.translatedElements > 0) {
       const rule = status.activation === "language"
@@ -273,18 +284,30 @@
     }
   });
 
-  elements.viewButton.addEventListener("click", async () => {
-    try {
-      const type = currentStatus?.viewMode === "original" ? "showTranslation" : "showOriginal";
-      const status = await api.tabs.sendMessage(activeTab.id, { type }, { frameId: 0 });
-      renderPageStatus(status);
-    } catch {
-      showStatus(
-        t("pageUnavailable", null, "Page unavailable"),
-        t("reloadAfterInstall", null, "Reload the page after installing the extension."),
-        "error"
-      );
-    }
+  for (const button of elements.viewModeButtons) {
+    button.addEventListener("click", async () => {
+      const type = {
+        bilingual: "showBilingual",
+        original: "showOriginal",
+        translated: "showTranslation"
+      }[button.dataset.viewMode];
+
+      try {
+        const status = await api.tabs.sendMessage(activeTab.id, { type }, { frameId: 0 });
+        renderPageStatus(status);
+      } catch {
+        showStatus(
+          t("pageUnavailable", null, "Page unavailable"),
+          t("reloadAfterInstall", null, "Reload the page after installing the extension."),
+          "error"
+        );
+      }
+    });
+  }
+
+  elements.pdfButton.addEventListener("click", () => {
+    void api.tabs.create({ url: api.runtime.getURL("pdf/pdf.html") });
+    window.close();
   });
 
   elements.settingsButton.addEventListener("click", () => api.runtime.openOptionsPage());

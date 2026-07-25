@@ -24,6 +24,26 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'"
   },
+  "commands": {
+    "toggle-translation": {
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      },
+      "description": "__MSG_commandToggleTranslation__"
+    },
+    "cycle-view-mode": {
+      "suggested_key": {
+        "default": "Alt+Shift+U"
+      },
+      "description": "__MSG_commandCycleViewMode__"
+    },
+    "translate-editable": {
+      "suggested_key": {
+        "default": "Alt+Shift+T"
+      },
+      "description": "__MSG_commandTranslateEditable__"
+    }
+  },
   "action": {
     "default_title": "__MSG_extensionName__",
     "default_popup": "popup/popup.html",

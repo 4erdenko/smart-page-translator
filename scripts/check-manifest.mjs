@@ -23,13 +23,18 @@ const referencedFiles = new Set([
 const releaseNoticeFiles = [
   "LICENSE",
   "THIRD_PARTY_NOTICES.md",
+  "vendor/LICENSE.fontkit.txt",
+  "vendor/LICENSE.pdf-lib.txt",
+  "vendor/LICENSE.pdfjs.txt",
   "vendor/LICENSE.webextension-polyfill.txt"
 ];
 const expectedPackageFiles = new Set([
   ...getReleaseSourceFiles(target),
   ...releaseNoticeFiles,
   "manifest.json",
-  "vendor/browser-polyfill.js"
+  "vendor/browser-polyfill.js",
+  "vendor/fontkit.js",
+  "vendor/pdf-lib.js"
 ]);
 
 async function listPackageFiles(directory, relativeDirectory = "") {
@@ -72,6 +77,25 @@ async function listMissingHtmlResources(packageFiles) {
   }
 
   return missingResources;
+}
+
+for (const file of [
+  "vendor/pdf.mjs",
+  "vendor/pdf.worker.mjs",
+  ...await listPackageFiles(
+    path.join(projectRoot, "node_modules", "pdfjs-dist", "cmaps"),
+    "vendor/cmaps"
+  ),
+  ...await listPackageFiles(
+    path.join(projectRoot, "node_modules", "pdfjs-dist", "standard_fonts"),
+    "vendor/standard_fonts"
+  ),
+  ...await listPackageFiles(
+    path.join(projectRoot, "node_modules", "pdfjs-dist", "wasm"),
+    "vendor/wasm"
+  )
+]) {
+  expectedPackageFiles.add(file);
 }
 
 if (manifest.manifest_version !== 3) {

@@ -43,6 +43,7 @@
   const MIN_TRANSLATION_MOTION_MS = 720;
   const MAX_CLEANUP_ITEMS_PER_SLICE = 240;
   const MAX_RESTORE_ITEMS_PER_SLICE = 160;
+  const MAX_VIEW_SWITCH_ITEMS_PER_SLICE = 160;
   const CLEANUP_DELAY = 800;
   const QUEUE_BACKOFF_MS = 1500;
   const OFFSCREEN_BATCH_DELAY = 160;
@@ -87,6 +88,7 @@
   let motionHost;
   let motionRoot;
   let motionRequestSequence = 0;
+  let lastActiveViewMode = "translated";
   let observerActive = false;
   let pendingTargetCount = 0;
   let policyRevision = 0;
@@ -105,6 +107,7 @@
   let selectionRoot;
   let subtreeScanTimer;
   let translationCancellationPromise = Promise.resolve();
+  let viewSwitchJob;
   let visibilityElementLookup = new WeakMap();
   let needsFullRescan = false;
   const state = {
@@ -128,7 +131,34 @@
   };
 
   function isTranslationViewActive() {
-    return state.enabled && state.viewMode === "translated" && !state.error && !restoreJob;
+    return state.enabled
+      && ["bilingual", "translated"].includes(state.viewMode)
+      && !state.error
+      && !restoreJob
+      && !viewSwitchJob;
+  }
+
+  function getBilingualText(record) {
+    if (record.semanticKind === "interface") {
+      return record.translated;
+    }
+
+    const original = splitBoundaryWhitespace(record.original);
+    const translated = splitBoundaryWhitespace(record.translated);
+
+    return `${original.leading}${original.core} · ${translated.core}${original.trailing}`;
+  }
+
+  function getDisplayedText(record, viewMode = state.viewMode) {
+    if (viewMode === "original") {
+      return record.original;
+    }
+
+    return viewMode === "bilingual" ? getBilingualText(record) : record.translated;
+  }
+
+  function getDisplayedAttribute(record, viewMode = state.viewMode) {
+    return viewMode === "original" ? record.original : record.translated;
   }
 
   const observer = new MutationObserver((mutations) => {
@@ -541,7 +571,7 @@
     const currentValue = node.nodeValue ?? "";
     const existing = textRecords.get(node);
 
-    if (existing && currentValue === existing.translated) {
+    if (existing && currentValue === existing.displayed) {
       return;
     }
 
@@ -581,6 +611,7 @@
         node: nodeReference,
         original: currentValue,
         partIndex,
+        semanticKind: textKind,
         trailing: parts.trailing
       };
 
@@ -629,7 +660,7 @@
     const currentValue = element.getAttribute(attribute) ?? "";
     const existing = attributeRecords.get(element)?.get(attribute);
 
-    if (existing && currentValue === existing.translated) {
+    if (existing && currentValue === existing.displayed) {
       return;
     }
 
@@ -1074,6 +1105,7 @@
     const records = attributeRecords.get(option) || new Map();
     const record = {
       attribute: "value",
+      displayed: value,
       element: createWeakReference(option),
       original: null,
       translated: value
@@ -1115,9 +1147,16 @@
     }
 
     preserveImplicitOptionValue(node);
-    textRecords.set(node, { original: assembly.original, translated });
+    const record = {
+      displayed: translated,
+      original: assembly.original,
+      semanticKind: target.semanticKind,
+      translated
+    };
+    record.displayed = getDisplayedText(record);
+    textRecords.set(node, record);
     trackTextNode(node);
-    node.nodeValue = translated;
+    node.nodeValue = record.displayed;
     return true;
   }
 
@@ -1154,11 +1193,13 @@
     let record = records.get(target.attribute);
 
     if (record) {
+      record.displayed = translated;
       record.original = assembly.original;
       record.translated = translated;
     } else {
       record = {
         attribute: target.attribute,
+        displayed: translated,
         element: createWeakReference(element),
         original: assembly.original,
         translated
@@ -1972,7 +2013,7 @@
         const node = reference.deref();
         const record = node ? textRecords.get(node) : null;
 
-        if (node?.isConnected && record && node.nodeValue === record.translated) {
+        if (node?.isConnected && record && node.nodeValue === record.displayed) {
           node.nodeValue = record.original;
         }
 
@@ -1981,7 +2022,7 @@
         const record = next.value;
         const element = record.element.deref();
 
-        if (element?.isConnected && element.getAttribute(record.attribute) === record.translated) {
+        if (element?.isConnected && element.getAttribute(record.attribute) === record.displayed) {
           if (record.original === null) {
             element.removeAttribute(record.attribute);
           } else {
@@ -2147,6 +2188,10 @@
   }
 
   async function applySettings(settings, enabled, detectedLanguage, siteMode, nextPolicyRevision) {
+    if (viewSwitchJob) {
+      await viewSwitchJob.promise;
+    }
+
     if (restoreJob) {
       await restoreJob.promise;
     }
@@ -2223,7 +2268,7 @@
       pauseObserver();
     }
 
-    if (startTranslation && state.viewMode === "translated") {
+    if (startTranslation && ["bilingual", "translated"].includes(state.viewMode)) {
       scanSubtree(document);
     }
 
@@ -2354,29 +2399,178 @@
     }
   }
 
-  async function showOriginal() {
-    if (!state.enabled || state.viewMode === "original") {
-      return publicStatus();
+  function processNextViewSwitchItem(job) {
+    while (job.phaseIndex < job.phases.length) {
+      const phase = job.phases[job.phaseIndex];
+
+      if (phase.remaining <= 0) {
+        job.phaseIndex += 1;
+        continue;
+      }
+
+      const next = phase.iterator.next();
+      phase.remaining -= 1;
+
+      if (next.done) {
+        phase.remaining = 0;
+        job.phaseIndex += 1;
+        continue;
+      }
+
+      if (phase.type === "text") {
+        const reference = next.value;
+        const node = reference.deref();
+        const record = node ? textRecords.get(node) : null;
+
+        if (!node?.isConnected || !record) {
+          continue;
+        }
+
+        if (node.nodeValue !== record.displayed) {
+          scheduleScan(node);
+          continue;
+        }
+
+        record.displayed = getDisplayedText(record, job.viewMode);
+        node.nodeValue = record.displayed;
+        return true;
+      }
+
+      const record = next.value;
+      const element = record.element.deref();
+
+      if (!element?.isConnected) {
+        continue;
+      }
+
+      if (element.getAttribute(record.attribute) !== record.displayed) {
+        scheduleScan(element);
+        continue;
+      }
+
+      record.displayed = getDisplayedAttribute(record, job.viewMode);
+
+      if (record.displayed === null) {
+        element.removeAttribute(record.attribute);
+      } else {
+        element.setAttribute(record.attribute, record.displayed);
+      }
+
+      return true;
     }
 
-    state.viewMode = "original";
-    await restorePage();
-    updateRouteMonitoring();
-    reportStatus();
-    return publicStatus();
+    return false;
   }
 
-  async function showTranslation() {
+  function finishViewSwitch() {
+    const resolve = viewSwitchJob.resolve;
+    viewSwitchJob = undefined;
+    resumeObserver();
+    scanSubtree(document);
+    scheduleCleanup();
+    reportStatus();
+    resolve();
+  }
+
+  function runViewSwitchSlice() {
+    const startedAt = performance.now();
+    let processed = 0;
+
+    while (processed < MAX_VIEW_SWITCH_ITEMS_PER_SLICE
+      && performance.now() - startedAt < SCAN_TIME_BUDGET_MS
+      && processNextViewSwitchItem(viewSwitchJob)) {
+      processed += 1;
+    }
+
+    if (viewSwitchJob.phaseIndex < viewSwitchJob.phases.length) {
+      setTimeout(runViewSwitchSlice, 0);
+      return;
+    }
+
+    finishViewSwitch();
+  }
+
+  async function showActiveView(viewMode) {
+    if (viewSwitchJob) {
+      await viewSwitchJob.promise;
+    }
+
     if (restoreJob) {
       await restoreJob.promise;
     }
 
-    if (!state.enabled || state.viewMode === "translated") {
+    if (!state.enabled || !["bilingual", "original", "translated"].includes(viewMode)) {
       return publicStatus();
     }
 
-    state.viewMode = "translated";
+    if (state.viewMode === viewMode) {
+      return publicStatus();
+    }
+
+    if (viewMode !== "original") {
+      lastActiveViewMode = viewMode;
+    }
+
     state.error = "";
+    state.viewMode = viewMode;
+    pauseObserver();
+    removeMotion();
+    let resolve;
+    const promise = new Promise((resolvePromise) => {
+      resolve = resolvePromise;
+    });
+    viewSwitchJob = {
+      phaseIndex: 0,
+      phases: [
+        { iterator: trackedTextRefs.values(), remaining: trackedTextRefs.size, type: "text" },
+        {
+          iterator: trackedAttributeRecords.values(),
+          remaining: trackedAttributeRecords.size,
+          type: "attribute"
+        }
+      ],
+      promise,
+      resolve,
+      viewMode
+    };
+
+    if (viewSwitchJob.phases.some(({ remaining }) => remaining > 0)) {
+      runViewSwitchSlice();
+      await promise;
+    } else {
+      finishViewSwitch();
+    }
+
+    return publicStatus();
+  }
+
+  async function showOriginal() {
+    return showActiveView("original");
+  }
+
+  async function showTranslation() {
+    return showActiveView("translated");
+  }
+
+  async function showBilingual() {
+    return showActiveView("bilingual");
+  }
+
+  async function enableTranslation(viewMode = lastActiveViewMode) {
+    if (viewSwitchJob) {
+      await viewSwitchJob.promise;
+    }
+
+    if (restoreJob) {
+      await restoreJob.promise;
+    }
+
+    state.error = "";
+    state.enabled = true;
+    state.siteMode = "session";
+    state.viewMode = viewMode;
+    lastActiveViewMode = viewMode;
+    routeRescanPending = false;
     updateRouteMonitoring();
     resumeObserver();
     scanSubtree(document);
@@ -2651,6 +2845,227 @@
     }
   }
 
+  function getDeepActiveElement() {
+    let activeElement = document.activeElement;
+
+    while (activeElement?.shadowRoot?.activeElement) {
+      activeElement = activeElement.shadowRoot.activeElement;
+    }
+
+    return activeElement;
+  }
+
+  function hasFocusedChildFrame() {
+    return ["FRAME", "IFRAME"].includes(getDeepActiveElement()?.tagName);
+  }
+
+  function createInputEvent(text) {
+    try {
+      return new InputEvent("input", {
+        bubbles: true,
+        data: text,
+        inputType: "insertText"
+      });
+    } catch {
+      return new Event("input", { bubbles: true });
+    }
+  }
+
+  function isRangeInsideElement(range, element) {
+    const container = range?.commonAncestorContainer;
+    return Boolean(container?.isConnected && element?.contains(container));
+  }
+
+  function getEditableTranslationTarget() {
+    const activeElement = getDeepActiveElement();
+
+    if (activeElement?.tagName === "INPUT" || activeElement?.tagName === "TEXTAREA") {
+      const inputType = String(activeElement.type || "text").toLowerCase();
+
+      if (activeElement.tagName === "INPUT" && !["search", "text"].includes(inputType)) {
+        return null;
+      }
+
+      const originalValue = activeElement.value;
+      const selectionStart = Number.isInteger(activeElement.selectionStart)
+        ? activeElement.selectionStart
+        : 0;
+      const selectionEnd = Number.isInteger(activeElement.selectionEnd)
+        ? activeElement.selectionEnd
+        : originalValue.length;
+      const hasSelection = selectionEnd > selectionStart;
+      const selectedText = hasSelection
+        ? originalValue.slice(selectionStart, selectionEnd)
+        : originalValue;
+      const boundary = splitBoundaryWhitespace(selectedText);
+      const text = boundary.core;
+
+      if (!shouldTranslateText(text)) {
+        return null;
+      }
+
+      return {
+        apply(translation) {
+          if (!activeElement.isConnected || activeElement.value !== originalValue) {
+            return false;
+          }
+
+          const start = hasSelection ? selectionStart : 0;
+          const end = hasSelection ? selectionEnd : originalValue.length;
+          const replacement = `${boundary.leading}${translation}${boundary.trailing}`;
+          activeElement.setRangeText(replacement, start, end, "end");
+          activeElement.dispatchEvent(createInputEvent(replacement));
+          return true;
+        },
+        rectangle: activeElement.getBoundingClientRect(),
+        text
+      };
+    }
+
+    if (!activeElement?.isContentEditable) {
+      return null;
+    }
+
+    const selection = window.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    const selectedText = String(range?.toString() || "");
+    const boundary = splitBoundaryWhitespace(selectedText);
+    const text = boundary.core;
+
+    if (!range
+      || range.collapsed
+      || !isRangeInsideElement(range, activeElement)
+      || range.startContainer !== range.endContainer
+      || range.startContainer.nodeType !== Node.TEXT_NODE
+      || !shouldTranslateText(text)) {
+      return null;
+    }
+
+    const textNode = range.startContainer;
+    const originalValue = textNode.nodeValue ?? "";
+    const selectionStart = range.startOffset;
+    const selectionEnd = range.endOffset;
+
+    return {
+      apply(translation) {
+        if (!activeElement.isConnected
+          || !textNode.isConnected
+          || !activeElement.contains(textNode)
+          || textNode.nodeValue !== originalValue) {
+          return false;
+        }
+
+        const replacement = `${boundary.leading}${translation}${boundary.trailing}`;
+        textNode.nodeValue = `${originalValue.slice(0, selectionStart)}${replacement}${originalValue.slice(selectionEnd)}`;
+        const nextRange = document.createRange();
+        nextRange.setStart(textNode, selectionStart + replacement.length);
+        nextRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(nextRange);
+        activeElement.dispatchEvent(createInputEvent(replacement));
+        return true;
+      },
+      rectangle: range.getBoundingClientRect(),
+      text
+    };
+  }
+
+  async function translateEditable({ silentIfUnavailable = false } = {}) {
+    const target = getEditableTranslationTarget();
+
+    if (!target) {
+      if (!silentIfUnavailable) {
+        showSelectionError(
+          null,
+          t(
+            "editableSelectionRequired",
+            null,
+            "Focus a text field, or select text inside a rich editor, then try again."
+          )
+        );
+      }
+
+      return;
+    }
+
+    if (target.text.length > MAX_SELECTION_CHARACTERS) {
+      showSelectionError(
+        { rectangle: target.rectangle },
+        t("selectionTooLong", null, "Select no more than 4,000 characters.")
+      );
+      return;
+    }
+
+    const requestRevision = ++selectionRequestRevision;
+    const loadingBody = createSelectionCard(
+      target.rectangle,
+      t("editableTranslating", null, "Translating field…")
+    );
+    appendSelectionText(
+      loadingBody,
+      t("selectionOriginal", null, "Original"),
+      target.text,
+      "original"
+    );
+
+    try {
+      const response = await api.runtime.sendMessage({
+        type: "translateBatch",
+        persistCache: false,
+        sourceLanguage: resolveRequestSourceLanguage(state.sourceLanguage),
+        items: [{
+          id: "editable",
+          text: target.text,
+          context: addPageLanguageContext(
+            "User explicitly requested translation for an editable field",
+            state.sourceLanguage === "auto" ? state.detectedLanguage : ""
+          ),
+          kind: "editable",
+          protectedTerms: []
+        }]
+      });
+
+      if (requestRevision !== selectionRequestRevision || !selectionHost?.isConnected) {
+        return;
+      }
+
+      const translated = response.translations?.find(({ id }) => id === "editable")?.text;
+
+      if (typeof translated !== "string") {
+        throw new Error("The translation response did not include the editable text.");
+      }
+
+      if (!target.apply(translated)) {
+        throw new Error(
+          t(
+            "editableChanged",
+            null,
+            "The field changed while translation was running, so it was not overwritten."
+          )
+        );
+      }
+
+      state.apiItems += Number(response.apiItems || 0);
+      reportStatus();
+      const body = createSelectionCard(
+        target.rectangle,
+        t("editableTranslated", null, "Field translated")
+      );
+      appendSelectionText(
+        body,
+        t("selectionTranslation", null, "Translation"),
+        translated
+      );
+    } catch (error) {
+      if (requestRevision === selectionRequestRevision) {
+        showSelectionError(
+          { rectangle: target.rectangle },
+          String(error?.message || error)
+        );
+      }
+    }
+  }
+
   function showSelectionAction(details) {
     selectionRequestRevision += 1;
     const root = ensureSelectionRoot();
@@ -2694,15 +3109,29 @@
     }
 
     if (message?.type === "translateNow") {
-      state.error = "";
-      state.enabled = true;
-      state.siteMode = "session";
-      state.viewMode = "translated";
-      routeRescanPending = false;
-      updateRouteMonitoring();
-      resumeObserver();
-      scanSubtree(document);
-      return Promise.resolve(publicStatus());
+      return enableTranslation();
+    }
+
+    if (message?.type === "toggleTranslation") {
+      if (!state.enabled) {
+        return enableTranslation();
+      }
+
+      return state.viewMode === "original"
+        ? showActiveView(lastActiveViewMode)
+        : showOriginal();
+    }
+
+    if (message?.type === "cycleViewMode") {
+      if (!state.enabled) {
+        return enableTranslation("translated");
+      }
+
+      if (state.viewMode === "original") {
+        return showTranslation();
+      }
+
+      return state.viewMode === "translated" ? showBilingual() : showOriginal();
     }
 
     if (message?.type === "restoreNow" || message?.type === "showOriginal") {
@@ -2713,11 +3142,23 @@
       return showTranslation();
     }
 
+    if (message?.type === "showBilingual") {
+      return showBilingual();
+    }
+
     if (message?.type === "translateSelection") {
       const details = getSelectionDetails(message.text);
 
       if (details) {
         void translateSelection(details);
+      }
+
+      return Promise.resolve();
+    }
+
+    if (message?.type === "translateEditable") {
+      if (document.hasFocus()) {
+        void translateEditable({ silentIfUnavailable: hasFocusedChildFrame() });
       }
 
       return Promise.resolve();

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mkdir, mkdtemp, rm, writeFile } = require("node:fs/promises");
+const { mkdir, mkdtemp, readFile, rm, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
 const JSZip = require("jszip");
@@ -56,13 +56,83 @@ test("rejects source archive paths outside the project root", async (context) =>
   }
 });
 
-test("includes locale resources and the shared UI helper in browser builds", async () => {
+test("includes locale resources, UI pages, and shared helpers in browser builds", async () => {
   const { getReleaseSourceFiles } = await import("../scripts/build.mjs");
 
   for (const target of ["firefox", "chrome"]) {
     const files = getReleaseSourceFiles(target);
     assert.ok(files.includes("_locales/en/messages.json"));
     assert.ok(files.includes("_locales/ru/messages.json"));
+    assert.ok(files.includes("lib/document-core.js"));
     assert.ok(files.includes("lib/ui-i18n.js"));
+    assert.ok(files.includes("onboarding/onboarding.html"));
+    assert.ok(files.includes("pdf/pdf.html"));
   }
+});
+
+test("runtime source does not use dynamic imports", async () => {
+  const { getReleaseSourceFiles } = await import("../scripts/build.mjs");
+  const runtimeFiles = getReleaseSourceFiles("firefox").filter((file) => file.endsWith(".js"));
+  const sources = await Promise.all(runtimeFiles.map((file) => readFile(
+    path.join(__dirname, "..", "src", file),
+    "utf8"
+  )));
+
+  for (let index = 0; index < sources.length; index += 1) {
+    assert.doesNotMatch(sources[index], /\bimport\s*\(/u, runtimeFiles[index]);
+  }
+});
+
+test("builds the browser-compatible PDF.js distribution", async () => {
+  const buildSource = await readFile(
+    path.join(__dirname, "..", "scripts", "build.mjs"),
+    "utf8"
+  );
+  const packageMetadata = JSON.parse(await readFile(
+    path.join(__dirname, "..", "package.json"),
+    "utf8"
+  ));
+
+  assert.match(
+    buildSource,
+    /"pdfjs-dist", "legacy", "build", "pdf\.min\.mjs"/u
+  );
+  assert.match(
+    buildSource,
+    /"pdfjs-dist", "legacy", "build", "pdf\.worker\.min\.mjs"/u
+  );
+  assert.equal(packageMetadata.engines.node, ">=22.13.0");
+});
+
+test("bundles PDF-LIB locally for translated PDF export", async () => {
+  const buildSource = await readFile(
+    path.join(__dirname, "..", "scripts", "build.mjs"),
+    "utf8"
+  );
+  const packageMetadata = JSON.parse(await readFile(
+    path.join(__dirname, "..", "package.json"),
+    "utf8"
+  ));
+
+  assert.equal(packageMetadata.dependencies["pdf-lib"], "1.17.1");
+  assert.match(
+    buildSource,
+    /"pdf-lib", "dist", "pdf-lib\.min\.js"/u
+  );
+  assert.match(
+    buildSource,
+    /"pdf-lib", "LICENSE\.md"/u
+  );
+  assert.match(
+    buildSource,
+    /function writeCspSafeFontkit\(destinationPath\)/u
+  );
+  assert.match(
+    buildSource,
+    /"fontkit\.umd\.min\.js"/u
+  );
+  assert.match(
+    buildSource,
+    /"LICENSE\.fontkit\.txt"/u
+  );
 });

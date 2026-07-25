@@ -176,6 +176,35 @@ select {
   color: #9d4655;
 }
 
+.view-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  margin-top: 11px;
+  padding: 3px;
+  border-radius: 11px;
+  background: #efedf4;
+}
+
+.view-modes button {
+  min-height: 30px;
+  padding: 0 7px;
+  color: #716d83;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 10px;
+  transition:
+    color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.view-modes button[aria-pressed="true"] {
+  color: #1d1d1f;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 7px rgba(44, 38, 65, 0.12);
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -219,7 +248,7 @@ select {
 
 .actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 9px;
   margin-top: 12px;
 }
@@ -259,7 +288,7 @@ button:disabled {
 }
 
 .secondary {
-  padding-inline: 15px;
+  padding-inline: 12px;
   color: #393451;
   background: #e9e7f0;
 }

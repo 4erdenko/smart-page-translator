@@ -32,11 +32,14 @@
   const LEGACY_DEEPSEEK_KEY = "deepseekApiKeyV1";
   const CACHE_KEY = "translationCacheV1";
   const CACHE_ENTRY_PREFIX = "translationCacheEntryV1:";
-  const CONTEXT_MENU_ID = "translate-selection";
+  const CONTEXT_MENU_SELECTION_ID = "translate-selection";
+  const CONTEXT_MENU_EDITABLE_ID = "translate-editable";
+  const ONBOARDING_VERSION_KEY = "onboardingShownVersion";
+  const SETTINGS_VERSION = 2;
   const DEFAULT_SETTINGS = Object.freeze({
     animationEnabled: true,
     autoTranslateLanguages: [],
-    cacheMaxEntries: 8000,
+    cacheMaxEntries: 16000,
     provider: "deepseek",
     providerModels: Object.freeze({
       deepseek: PROVIDERS.deepseek.defaultModel,
@@ -45,7 +48,8 @@
     protectedTerms: [],
     siteRules: {},
     sourceLanguage: "auto",
-    targetLanguage: "ru"
+    targetLanguage: "ru",
+    version: SETTINGS_VERSION
   });
   const MAX_BATCH_CHARACTERS = 10000;
   const MAX_BATCH_TRANSLATION_CHARACTERS = 40000;
@@ -281,13 +285,30 @@
       protectedTerms: normalizeProtectedTerms(value?.protectedTerms),
       siteRules: normalizeSiteRules(value?.siteRules, value?.enabledSites),
       sourceLanguage: normalizeLanguage(value?.sourceLanguage, DEFAULT_SETTINGS.sourceLanguage),
-      targetLanguage: normalizeLanguage(value?.targetLanguage, DEFAULT_SETTINGS.targetLanguage)
+      targetLanguage: normalizeLanguage(value?.targetLanguage, DEFAULT_SETTINGS.targetLanguage),
+      version: SETTINGS_VERSION
     };
   }
 
   async function getSettings() {
     const stored = await api.storage.local.get(SETTINGS_KEY);
-    return sanitizeSettings(stored[SETTINGS_KEY] ?? DEFAULT_SETTINGS);
+    const current = stored[SETTINGS_KEY];
+    const migrated = current && Number(current.version || 0) < SETTINGS_VERSION
+      ? {
+        ...current,
+        cacheMaxEntries: Number(current.cacheMaxEntries) === 8000
+          ? DEFAULT_SETTINGS.cacheMaxEntries
+          : current.cacheMaxEntries,
+        version: SETTINGS_VERSION
+      }
+      : current;
+    const settings = sanitizeSettings(migrated ?? DEFAULT_SETTINGS);
+
+    if (current && Number(current.version || 0) < SETTINGS_VERSION) {
+      await api.storage.local.set({ [SETTINGS_KEY]: settings });
+    }
+
+    return settings;
   }
 
   async function saveSettings(settings) {
@@ -824,7 +845,16 @@
 
       const text = normalizeText(rawText);
       const context = normalizeText(rawContext);
-      const kind = ["brand-name", "heading", "interface", "product-title", "proper-name", "text"].includes(item?.kind)
+      const kind = [
+        "brand-name",
+        "document",
+        "editable",
+        "heading",
+        "interface",
+        "product-title",
+        "proper-name",
+        "text"
+      ].includes(item?.kind)
         ? item.kind
         : "text";
 
@@ -1382,46 +1412,88 @@
   }
 
   async function registerContextMenu() {
-    try {
-      await api.contextMenus.remove(CONTEXT_MENU_ID);
-    } catch {
-      // The menu is absent on a fresh installation.
+    for (const menuId of [CONTEXT_MENU_SELECTION_ID, CONTEXT_MENU_EDITABLE_ID]) {
+      try {
+        await api.contextMenus.remove(menuId);
+      } catch {
+        // The menu is absent on a fresh installation.
+      }
     }
 
     api.contextMenus.create({
       contexts: ["selection"],
-      id: CONTEXT_MENU_ID,
+      id: CONTEXT_MENU_SELECTION_ID,
       title: api.i18n.getMessage("contextTranslateSelection") || "Translate selection"
+    });
+    api.contextMenus.create({
+      contexts: ["editable"],
+      id: CONTEXT_MENU_EDITABLE_ID,
+      title: api.i18n.getMessage("contextTranslateEditable") || "Translate this field"
     });
   }
 
-  api.runtime.onInstalled.addListener(async () => {
+  api.runtime.onInstalled.addListener(async (details) => {
     await storageAccessPromise;
-    const stored = await api.storage.local.get(SETTINGS_KEY);
+    const stored = await api.storage.local.get([SETTINGS_KEY, ONBOARDING_VERSION_KEY]);
 
     if (!stored[SETTINGS_KEY]) {
       await saveSettings(DEFAULT_SETTINGS);
     }
 
     await registerContextMenu();
+
+    if (details?.reason === "install" && stored[ONBOARDING_VERSION_KEY] !== SETTINGS_VERSION) {
+      await api.storage.local.set({ [ONBOARDING_VERSION_KEY]: SETTINGS_VERSION });
+      await api.tabs.create({ url: api.runtime.getURL("onboarding/onboarding.html") });
+    }
   });
 
   api.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId !== CONTEXT_MENU_ID
-      || info.editable === true
-      || tab?.id == null
-      || typeof info.selectionText !== "string") {
+    if (tab?.id == null) {
       return;
     }
 
-    void api.tabs.sendMessage(
-      tab.id,
-      {
-        type: "translateSelection",
-        text: info.selectionText
-      },
-      { frameId: info.frameId ?? 0 }
-    ).catch(() => undefined);
+    if (info.menuItemId === CONTEXT_MENU_SELECTION_ID
+      && info.editable !== true
+      && typeof info.selectionText === "string") {
+      void api.tabs.sendMessage(
+        tab.id,
+        {
+          type: "translateSelection",
+          text: info.selectionText
+        },
+        { frameId: info.frameId ?? 0 }
+      ).catch(() => undefined);
+    } else if (info.menuItemId === CONTEXT_MENU_EDITABLE_ID && info.editable === true) {
+      void api.tabs.sendMessage(
+        tab.id,
+        {
+          type: "translateEditable",
+          text: typeof info.selectionText === "string" ? info.selectionText : ""
+        },
+        { frameId: info.frameId ?? 0 }
+      ).catch(() => undefined);
+    }
+  });
+
+  api.commands.onCommand.addListener(async (command) => {
+    const [tab] = await api.tabs.query({ active: true, currentWindow: true });
+
+    if (tab?.id == null) {
+      return;
+    }
+
+    const messageType = {
+      "cycle-view-mode": "cycleViewMode",
+      "toggle-translation": "toggleTranslation",
+      "translate-editable": "translateEditable"
+    }[command];
+
+    if (messageType === "translateEditable") {
+      await api.tabs.sendMessage(tab.id, { type: messageType }).catch(() => undefined);
+    } else if (messageType) {
+      await api.tabs.sendMessage(tab.id, { type: messageType }, { frameId: 0 }).catch(() => undefined);
+    }
   });
 
   function handleMessage(message, sender) {
@@ -1456,7 +1528,7 @@
           notifyTranslationPending,
           controller.signal,
           requestScope,
-          sender?.tab?.incognito !== true
+          sender?.tab?.incognito !== true && message.persistCache !== false
         ).finally(() => activeTranslationRequests.delete(activeRequest));
         return activeRequest.promise;
       }

@@ -291,7 +291,7 @@
     "message": "Максимум фраз в кэше"
   },
   "cacheLimitHint": {
-    "message": "По умолчанию: 8 000 фраз. Жёсткие границы: 20 000 фраз и 16 МиБ."
+    "message": "По умолчанию: 16 000 фраз. Жёсткие границы: 20 000 фраз и 16 МиБ."
   },
   "clearTranslationCache": {
     "message": "Очистить кэш переводов"
@@ -300,7 +300,7 @@
     "message": "Конфиденциальность"
   },
   "privacyDescription": {
-    "message": "После включения сайта его нередактируемый текст отправляется выбранному сервису. Значения форм и редактируемый текст пропускаются."
+    "message": "Автоматический перевод пропускает формы и редактируемый текст. Поле отправляется только после явной команды «Перевести это поле», а результат не кэшируется."
   },
   "saveSettings": {
     "message": "Сохранить настройки"
@@ -343,5 +343,215 @@
   },
   "cacheCount": {
     "message": "Фраз: {count} · {used} / {maximum}"
+  },
+  "commandToggleTranslation": {
+    "message": "Включить или скрыть перевод страницы"
+  },
+  "commandCycleViewMode": {
+    "message": "Переключить оригинал, перевод и двуязычный режим"
+  },
+  "commandTranslateEditable": {
+    "message": "Перевести активное поле ввода"
+  },
+  "pageView": {
+    "message": "Вид страницы"
+  },
+  "viewOriginal": {
+    "message": "Оригинал"
+  },
+  "viewTranslated": {
+    "message": "Перевод"
+  },
+  "viewBilingual": {
+    "message": "Оба"
+  },
+  "bilingualViewActive": {
+    "message": "Двуязычный режим"
+  },
+  "bilingualViewDetails": {
+    "message": "Оригинальный и переведённый текст показаны вместе."
+  },
+  "openPdf": {
+    "message": "PDF"
+  },
+  "contextTranslateEditable": {
+    "message": "Перевести это поле"
+  },
+  "editableSelectionRequired": {
+    "message": "Установите курсор в текстовое поле или выделите текст в редакторе и повторите."
+  },
+  "editableTranslating": {
+    "message": "Перевод поля…"
+  },
+  "editableChanged": {
+    "message": "Поле изменилось во время перевода, поэтому оно не было перезаписано."
+  },
+  "editableTranslated": {
+    "message": "Поле переведено"
+  },
+  "welcomeEyebrow": {
+    "message": "Готов к любой странице"
+  },
+  "welcomeTitle": {
+    "message": "Добро пожаловать в Smart Page Translator"
+  },
+  "welcomeDescription": {
+    "message": "Переводите динамические страницы целиком, сохраняйте бренды и повторно используйте локальный кэш."
+  },
+  "quickSetup": {
+    "message": "Быстрая настройка"
+  },
+  "chooseTargetLanguage": {
+    "message": "Выберите язык перевода"
+  },
+  "keyFeatures": {
+    "message": "Основные возможности"
+  },
+  "welcomeWholePage": {
+    "message": "Перевод всей страницы"
+  },
+  "welcomeWholePageDescription": {
+    "message": "Динамический контент и описания товаров продолжают переводиться при изменениях страницы."
+  },
+  "welcomeViews": {
+    "message": "Три режима чтения"
+  },
+  "welcomeViewsDescription": {
+    "message": "Переключайтесь между оригиналом, переводом и двуязычным текстом без нового запроса к сервису."
+  },
+  "welcomePrivateActions": {
+    "message": "Только явные приватные действия"
+  },
+  "welcomePrivateActionsDescription": {
+    "message": "Поля ввода и локальные PDF переводятся только после вашей команды."
+  },
+  "keyboardShortcuts": {
+    "message": "Горячие клавиши"
+  },
+  "workWithoutLeavingPage": {
+    "message": "Работайте, не покидая страницу"
+  },
+  "shortcutToggle": {
+    "message": "Включить или скрыть перевод"
+  },
+  "shortcutCycle": {
+    "message": "Переключить режим чтения"
+  },
+  "shortcutEditable": {
+    "message": "Перевести активное поле"
+  },
+  "shortcutUnassigned": {
+    "message": "Назначить в браузере"
+  },
+  "openPdfWorkspace": {
+    "message": "Открыть PDF"
+  },
+  "configureProvider": {
+    "message": "Настроить сервис"
+  },
+  "done": {
+    "message": "Готово"
+  },
+  "languageSaved": {
+    "message": "Язык сохранён."
+  },
+  "pdfWorkspaceTitle": {
+    "message": "Перевод PDF"
+  },
+  "pdfWorkspace": {
+    "message": "Работа с PDF"
+  },
+  "choosePdf": {
+    "message": "Выбрать PDF"
+  },
+  "localDocument": {
+    "message": "Локальный документ"
+  },
+  "translatePdf": {
+    "message": "Переведите PDF без загрузки самого файла"
+  },
+  "pdfIntroDescription": {
+    "message": "Документ разбирается локально. Только извлечённый текст отправляется выбранному сервису после нажатия кнопки перевода."
+  },
+  "dropPdf": {
+    "message": "Перетащите PDF сюда"
+  },
+  "orChooseFile": {
+    "message": "или выберите файл на компьютере"
+  },
+  "currentDocument": {
+    "message": "Текущий документ"
+  },
+  "removeDocument": {
+    "message": "Убрать"
+  },
+  "cachePdfTranslations": {
+    "message": "Кэшировать перевод"
+  },
+  "cachePdfTranslationsHint": {
+    "message": "Повторно использовать одинаковый текст."
+  },
+  "cancel": {
+    "message": "Отмена"
+  },
+  "translateDocument": {
+    "message": "Перевести документ"
+  },
+  "downloadTranslatedPdf": {
+    "message": "Скачать переведённый PDF"
+  },
+  "pdfLayoutHint": {
+    "message": "Экспорт сохраняет внешний вид страницы как фон и добавляет подогнанный текст перевода, который можно искать и копировать. Ссылки, формы, аннотации и подписи не сохраняются."
+  },
+  "pdfPageNumber": {
+    "message": "Страница {number}"
+  },
+  "pdfDocumentSummary": {
+    "message": "Страниц: {pages} · символов: {characters} · переведено: {translated}"
+  },
+  "invalidPdf": {
+    "message": "Выберите PDF размером до 100 МиБ."
+  },
+  "readingPdf": {
+    "message": "Чтение PDF на устройстве…"
+  },
+  "pdfTooManyPages": {
+    "message": "В этом PDF больше 1 000 страниц."
+  },
+  "readingPdfPage": {
+    "message": "Чтение страницы {current} из {total}…"
+  },
+  "pdfTooMuchText": {
+    "message": "В PDF извлечено больше 5 000 000 символов."
+  },
+  "pdfReady": {
+    "message": "PDF готов. Перевод начнётся только по вашей команде."
+  },
+  "pdfNoText": {
+    "message": "В PDF не найден текст для перевода."
+  },
+  "translatingPdf": {
+    "message": "Переведено пакетов: {current} из {total}…"
+  },
+  "pdfTranslated": {
+    "message": "Перевод PDF завершён."
+  },
+  "pdfTranslatedBadge": {
+    "message": "Переведено"
+  },
+  "exportingPdf": {
+    "message": "Сборка PDF: {current} из {total}…"
+  },
+  "pdfDownloadReady": {
+    "message": "Скачивание переведённого PDF началось."
+  },
+  "pdfExportTooLarge": {
+    "message": "Размер подготовленного PDF превышает безопасный предел экспорта 128 МиБ. Разделите документ и повторите попытку."
+  },
+  "pdfTranslationDoesNotFit": {
+    "message": "Один из блоков перевода не помещается в свою область PDF. Проверьте макет документа."
+  },
+  "translationCancelled": {
+    "message": "Перевод отменён."
   }
 }

@@ -3,7 +3,7 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["artifacts/**", "dist/**", "node_modules/**"]
+    ignores: [".my_local_dev/**", "artifacts/**", "dist/**", "node_modules/**"]
   },
   eslint.configs.recommended,
   {
@@ -31,6 +31,12 @@ export default [
       globals: {
         importScripts: "readonly"
       }
+    }
+  },
+  {
+    files: ["src/pdf/pdf.js"],
+    languageOptions: {
+      sourceType: "module"
     }
   },
   {

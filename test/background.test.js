@@ -8,6 +8,7 @@ const translationCore = require("../src/lib/translation-core.js");
 
 const backgroundSource = readFileSync(require.resolve("../src/background.js"), "utf8");
 const contentSource = readFileSync(require.resolve("../src/content.js"), "utf8");
+const pdfSource = readFileSync(require.resolve("../src/pdf/pdf.js"), "utf8");
 const popupSource = readFileSync(require.resolve("../src/popup/popup.js"), "utf8");
 const CACHE_ENTRY_PREFIX = "translationCacheEntryV1:";
 
@@ -102,11 +103,14 @@ function createHarness({
   tabSendMessage
 }) {
   let messageListener;
+  let commandListener;
   let contextMenuListener;
+  let installedListener;
   const actionCalls = [];
   const accessLevelCalls = [];
   const storageGetKeys = [];
   const tabMessages = [];
+  const createdTabs = [];
   const storageData = {
     providerApiKeysV1: { deepseek: "test-api-key-for-background" },
     ...storage
@@ -129,6 +133,13 @@ function createHarness({
         }
       }
     },
+    commands: {
+      onCommand: {
+        addListener(listener) {
+          commandListener = listener;
+        }
+      }
+    },
     i18n: {
       detectLanguage: detectLanguage || (async () => ({
         isReliable: true,
@@ -139,10 +150,14 @@ function createHarness({
       }
     },
     runtime: {
-      getURL() {
-        return `${browserProtocol}//test/`;
+      getURL(path = "") {
+        return `${browserProtocol}//test/${path}`;
       },
-      onInstalled: { addListener() {} },
+      onInstalled: {
+        addListener(listener) {
+          installedListener = listener;
+        }
+      },
       onMessage: {
         addListener(listener) {
           messageListener = listener;
@@ -193,6 +208,10 @@ function createHarness({
       onChanged: { addListener() {} }
     },
     tabs: {
+      async create(options) {
+        createdTabs.push(options);
+        return { id: 8, ...options };
+      },
       async get(tabId) {
         return tabGet
           ? tabGet(tabId)
@@ -238,6 +257,13 @@ function createHarness({
   return {
     accessLevelCalls,
     actionCalls,
+    createdTabs,
+    install(details) {
+      return installedListener(details);
+    },
+    sendCommand(command) {
+      return commandListener(command);
+    },
     send(message, sender = {
       tab: { id: 7, url: "https://example.com/page" },
       url: browser.runtime.getURL("")
@@ -306,6 +332,36 @@ test("content settings do not load the translation cache", async () => {
   assert.equal(Object.keys(getStoredCache(harness.storageData)).length, 1);
 });
 
+test("migrates the legacy default cache size to 16,000 phrases", async () => {
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      settingsV1: {
+        cacheMaxEntries: 8000
+      }
+    }
+  });
+  const response = await harness.send({ type: "getSettings" });
+
+  assert.equal(response.settings.cacheMaxEntries, 16000);
+  assert.equal(harness.storageData.settingsV1.cacheMaxEntries, 16000);
+  assert.equal(harness.storageData.settingsV1.version, 2);
+});
+
+test("opens onboarding once for a new installation", async () => {
+  const harness = createHarness({ fetchImpl: async () => createResponse([]) });
+
+  await harness.install({ reason: "install", temporary: false });
+
+  assert.equal(harness.storageData.settingsV1.cacheMaxEntries, 16000);
+  assert.equal(harness.storageData.onboardingShownVersion, 2);
+  assert.equal(harness.createdTabs.length, 1);
+  assert.equal(
+    harness.createdTabs[0].url,
+    "chrome-extension://test/onboarding/onboarding.html"
+  );
+});
+
 test("normalizes protected terms and exposes them without other private settings", async () => {
   const harness = createHarness({
     fetchImpl: async () => createResponse([]),
@@ -365,6 +421,69 @@ test("does not translate context-menu selections from editable fields", async ()
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.deepEqual(harness.tabMessages, []);
+});
+
+test("routes explicit editable translation without reusing the selection command", async () => {
+  const harness = createHarness({ fetchImpl: async () => createResponse([]) });
+
+  harness.sendContextMenu({
+    editable: true,
+    frameId: 2,
+    menuItemId: "translate-editable",
+    selectionText: "Private draft"
+  }, { id: 21 });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.tabMessages.at(-1))), {
+    message: {
+      type: "translateEditable",
+      text: "Private draft"
+    },
+    options: { frameId: 2 },
+    tabId: 21
+  });
+});
+
+test("routes browser commands to the active top frame", async () => {
+  const harness = createHarness({ fetchImpl: async () => createResponse([]) });
+
+  await harness.sendCommand("cycle-view-mode");
+
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.tabMessages.at(-1))), {
+    message: { type: "cycleViewMode" },
+    options: { frameId: 0 },
+    tabId: 7
+  });
+});
+
+test("broadcasts editable translation commands to the focused frame", async () => {
+  const harness = createHarness({ fetchImpl: async () => createResponse([]) });
+
+  await harness.sendCommand("translate-editable");
+
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.tabMessages.at(-1))), {
+    message: { type: "translateEditable" },
+    tabId: 7
+  });
+});
+
+test("top frames silently ignore editable commands focused inside child frames", () => {
+  const handlerStart = contentSource.indexOf('if (message?.type === "translateEditable")');
+  const handlerEnd = contentSource.indexOf('if (message?.type === "settingsChanged")', handlerStart);
+  const handler = contentSource.slice(handlerStart, handlerEnd);
+
+  assert.match(
+    contentSource,
+    /function hasFocusedChildFrame\(\) \{\s+return \["FRAME", "IFRAME"\]\.includes/u
+  );
+  assert.match(
+    contentSource,
+    /async function translateEditable\(\{ silentIfUnavailable = false \} = \{\}\)/u
+  );
+  assert.match(
+    handler,
+    /translateEditable\(\{ silentIfUnavailable: hasFocusedChildFrame\(\) \}\)/u
+  );
 });
 
 test("cross-origin frames require their own explicit always rule", async () => {
@@ -586,6 +705,27 @@ test("does not read or write the persistent translation cache in private tabs", 
     0
   );
   assert.equal(harness.storageGetKeys.includes(null), false);
+});
+
+test("explicit private translations bypass the persistent cache", async () => {
+  const harness = createHarness({
+    async fetchImpl() {
+      return createResponse([{ id: "0", text: "Переведённый черновик" }]);
+    }
+  });
+  const result = await harness.send({
+    type: "translateBatch",
+    persistCache: false,
+    sourceLanguage: "auto",
+    items: [{
+      ...translationItem("Editable draft")[0],
+      kind: "editable"
+    }]
+  }, contentSender());
+
+  assert.equal(result.translations[0].text, "Переведённый черновик");
+  assert.equal(result.cacheEntries, 0);
+  assert.deepEqual(getStoredCache(harness.storageData), {});
 });
 
 test("rejects oversized translation batches before contacting a provider", async () => {
@@ -898,11 +1038,19 @@ test("starts one-time translation and route monitoring after a manual retry", ()
   const handlerStart = contentSource.indexOf('if (message?.type === "translateNow")');
   const handlerEnd = contentSource.indexOf('if (message?.type === "restoreNow"', handlerStart);
   const handler = contentSource.slice(handlerStart, handlerEnd);
+  const enableStart = contentSource.indexOf("async function enableTranslation(");
+  const enableEnd = contentSource.indexOf("function destroySelectionUi()", enableStart);
+  const enableHandler = contentSource.slice(enableStart, enableEnd);
 
   assert.match(
-    handler,
-    /state\.error = "";\s+state\.enabled = true;\s+state\.siteMode = "session";\s+state\.viewMode = "translated";\s+routeRescanPending = false;\s+updateRouteMonitoring\(\);\s+resumeObserver\(\);/u
+    enableHandler,
+    /if \(viewSwitchJob\) \{\s+await viewSwitchJob\.promise;\s+\}[\s\S]*if \(restoreJob\) \{\s+await restoreJob\.promise;\s+\}/u
   );
+  assert.match(
+    enableHandler,
+    /state\.error = "";\s+state\.enabled = true;\s+state\.siteMode = "session";\s+state\.viewMode = viewMode;\s+lastActiveViewMode = viewMode;\s+routeRescanPending = false;\s+updateRouteMonitoring\(\);\s+resumeObserver\(\);/u
+  );
+  assert.match(handler, /if \(message\?\.type === "translateNow"\) \{\s+return enableTranslation\(\);/u);
 });
 
 test("discovers brand terms before translation batches can leave the page", () => {
@@ -931,17 +1079,164 @@ test("cancels stale translation requests when pending page work is cleared", () 
   assert.match(contentSource, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*cancelActiveTranslations\(\);/u);
 });
 
-test("keeps original view idle until translation is explicitly restored", () => {
+test("switches all page views without destroying translation records", () => {
   const originalStart = contentSource.indexOf("async function showOriginal()");
   const originalEnd = contentSource.indexOf("async function showTranslation()", originalStart);
   const originalHandler = contentSource.slice(originalStart, originalEnd);
-  const translatedStart = originalEnd;
-  const translatedEnd = contentSource.indexOf("function destroySelectionUi()", translatedStart);
-  const translatedHandler = contentSource.slice(translatedStart, translatedEnd);
+  const activeStart = contentSource.indexOf("async function showActiveView(");
+  const activeEnd = originalStart;
+  const activeHandler = contentSource.slice(activeStart, activeEnd);
 
-  assert.match(originalHandler, /state\.viewMode = "original";\s+await restorePage\(\);/u);
-  assert.match(contentSource, /return state\.enabled && state\.viewMode === "translated"/u);
-  assert.match(translatedHandler, /state\.viewMode = "translated";[\s\S]*resumeObserver\(\);[\s\S]*scanSubtree\(document\);/u);
+  assert.match(originalHandler, /return showActiveView\("original"\);/u);
+  assert.doesNotMatch(originalHandler, /restorePage\(/u);
+  assert.match(contentSource, /\["bilingual", "translated"\]\.includes\(state\.viewMode\)/u);
+  assert.match(activeHandler, /if \(viewSwitchJob\) \{\s+await viewSwitchJob\.promise;\s+\}/u);
+  assert.match(activeHandler, /if \(restoreJob\) \{\s+await restoreJob\.promise;\s+\}/u);
+  assert.match(activeHandler, /type: "text"[\s\S]*type: "attribute"/u);
+  assert.match(activeHandler, /state\.viewMode = viewMode;[\s\S]*runViewSwitchSlice\(\)/u);
+  assert.match(contentSource, /async function applySettings[\s\S]*await viewSwitchJob\.promise;/u);
+  assert.match(contentSource, /async function showTranslation\(\) \{\s+return showActiveView\("translated"\);/u);
+  assert.match(contentSource, /async function showBilingual\(\) \{\s+return showActiveView\("bilingual"\);/u);
+});
+
+test("keeps PDF user cancellation separate from provider failures", () => {
+  assert.match(pdfSource, /cancelledByUser: false/u);
+  assert.match(pdfSource, /if \(!run\.cancelledByUser\) \{\s+run\.error \|\|= error;/u);
+  assert.match(
+    pdfSource,
+    /if \(run\.cancelledByUser\) \{\s+showProgress\(t\("translationCancelled"/u
+  );
+  assert.match(
+    pdfSource,
+    /activeRun\.cancelled = true;\s+activeRun\.cancelledByUser = true;/u
+  );
+});
+
+test("releases detached PDF page views without resizing an active render", () => {
+  assert.match(
+    pdfSource,
+    /function releasePageView\(view\) \{\s+view\.wanted = false;\s+if \(view\.queued\) \{\s+return;\s+\}\s+clearCanvas\(view\.originalCanvas\);\s+clearCanvas\(view\.translatedCanvas\);/u
+  );
+  assert.match(
+    pdfSource,
+    /if \(entry\.isIntersecting\) \{[\s\S]*queuePagePreview\(page, view\);[\s\S]*\} else \{\s+releasePageView\(view\);/u
+  );
+  assert.doesNotMatch(pdfSource, /PAGE_RELEASE_DELAY|releaseTimer/u);
+  assert.match(
+    pdfSource,
+    /function clearPageViews\(\) \{[\s\S]*pageViewObserver\?\.disconnect\(\);[\s\S]*pageViews\.clear\(\);[\s\S]*elements\.pages\.replaceChildren\(\);/u
+  );
+  assert.match(
+    pdfSource,
+    /elements\.removeButton\.addEventListener\("click", \(\) => \{\s+clearDocument\(\);/u
+  );
+  assert.match(
+    pdfSource,
+    /window\.addEventListener\("focus", \(\) => \{\s+if \(!busy\) \{/u
+  );
+  assert.match(
+    pdfSource,
+    /if \(!queued\.view\.wanted \|\| queued\.view\.rendered \|\| documentState !== queued\.state\) \{\s+queued\.view\.queued = false;\s+continue;/u
+  );
+  assert.match(
+    pdfSource,
+    /function disposePendingLoad\([\s\S]*load\.loadingTask\.destroy\(\)/u
+  );
+  assert.match(
+    pdfSource,
+    /function handleFile\(file\) \{\s+if \(busy\) \{\s+return;/u
+  );
+});
+
+test("renders PDF translations as bounded page overlays and exports them", () => {
+  assert.match(pdfSource, /createPdfTextBlocks\(fragments, viewport\.width\)/u);
+  assert.match(pdfSource, /"PDF visual text block\."/u);
+  assert.doesNotMatch(pdfSource, /PDF page \$\{page\.number\}/u);
+  assert.match(pdfSource, /new IntersectionObserver\(/u);
+  assert.match(pdfSource, /activePreviewRenders < 2/u);
+  assert.match(pdfSource, /PDFDocument\.create\(\)/u);
+  assert.doesNotMatch(pdfSource, /PDFDocument\.load\(/u);
+  assert.match(pdfSource, /drawTranslationOverlay\([\s\S]*drawText: false/u);
+  assert.match(pdfSource, /outputDocument\.embedPng\(pageImageBytes\)/u);
+  assert.match(pdfSource, /outputPage\.drawImage\(pageImage/u);
+  assert.match(pdfSource, /outputDocument\.registerFontkit\(fontkit\)/u);
+  assert.match(pdfSource, /outputDocument\.embedFont\(regularBytes, \{ subset: true \}\)/u);
+  assert.match(pdfSource, /outputPage\.drawText\(line/u);
+  assert.match(pdfSource, /elements\.translationBadge\.hidden = !translated;/u);
+  assert.match(pdfSource, /link\.download = translatedFileName\(\);/u);
+});
+
+test("fails PDF export instead of drawing text outside its region", () => {
+  assert.match(pdfSource, /const MIN_EXPORT_FONT_SIZE = 0\.75;/u);
+  assert.match(
+    pdfSource,
+    /if \(fontSize <= MIN_EXPORT_FONT_SIZE\) \{[\s\S]*"pdfTranslationDoesNotFit"/u
+  );
+});
+
+test("bounds flattened PDF page data before embedding it", () => {
+  assert.match(pdfSource, /const MAX_EXPORT_IMAGE_BYTES = 128 \* 1024 \* 1024;/u);
+  assert.match(
+    pdfSource,
+    /embeddedImageBytes \+= pageImageBytes\.byteLength;\s+if \(embeddedImageBytes > MAX_EXPORT_IMAGE_BYTES\) \{/u
+  );
+});
+
+test("defers PDF settings refreshes while document work is active", () => {
+  assert.match(
+    pdfSource,
+    /if \(busy\) \{\s+settingsRefreshPending = true;\s+return;\s+\}/u
+  );
+  assert.match(
+    pdfSource,
+    /if \(wasBusy && !busy && settingsRefreshPending\) \{[\s\S]*loadSettings\(\)/u
+  );
+});
+
+test("shows PDF errors and progress before a completed bilingual status", () => {
+  const renderStart = popupSource.indexOf("function renderPageStatus(status)");
+  const renderEnd = popupSource.indexOf("async function readPageStatus()", renderStart);
+  const handler = popupSource.slice(renderStart, renderEnd);
+  const errorIndex = handler.indexOf("if (status.error)");
+  const translatingIndex = handler.indexOf("else if (status.translating)");
+  const bilingualIndex = handler.indexOf('status.viewMode === "bilingual"');
+
+  assert.ok(errorIndex >= 0);
+  assert.ok(translatingIndex > errorIndex);
+  assert.ok(bilingualIndex > translatingIndex);
+});
+
+test("refuses to mutate a detached contenteditable range", () => {
+  const targetStart = contentSource.indexOf("function getEditableTranslationTarget()");
+  const targetEnd = contentSource.indexOf("async function translateEditable(", targetStart);
+  const target = contentSource.slice(targetStart, targetEnd);
+
+  assert.match(
+    contentSource,
+    /return Boolean\(container\?\.isConnected && element\?\.contains\(container\)\);/u
+  );
+  assert.match(
+    target,
+    /!isRangeInsideElement\(range, activeElement\)[\s\S]*!textNode\.isConnected[\s\S]*!activeElement\.contains\(textNode\)/u
+  );
+});
+
+test("preserves editable markup and boundary whitespace during translation", () => {
+  const targetStart = contentSource.indexOf("function getEditableTranslationTarget()");
+  const targetEnd = contentSource.indexOf("async function translateEditable(", targetStart);
+  const target = contentSource.slice(targetStart, targetEnd);
+
+  assert.match(target, /const boundary = splitBoundaryWhitespace\(selectedText\);/u);
+  assert.match(
+    target,
+    /range\.startContainer !== range\.endContainer[\s\S]*range\.startContainer\.nodeType !== Node\.TEXT_NODE/u
+  );
+  assert.match(
+    target,
+    /const replacement = `\$\{boundary\.leading\}\$\{translation\}\$\{boundary\.trailing\}`;/u
+  );
+  assert.match(target, /textNode\.nodeValue = `\$\{originalValue\.slice/u);
+  assert.doesNotMatch(target, /range\.deleteContents\(\)|range\.insertNode\(/u);
 });
 
 test("uses one idle lane for offscreen translation work", () => {
@@ -964,7 +1259,7 @@ test("popup listens for status events without polling the page", () => {
 
 test("selection translation is bounded and does not mutate selected page text", () => {
   const selectionStart = contentSource.indexOf("async function translateSelection(");
-  const selectionEnd = contentSource.indexOf("function showSelectionAction(", selectionStart);
+  const selectionEnd = contentSource.indexOf("function getDeepActiveElement()", selectionStart);
   const handler = contentSource.slice(selectionStart, selectionEnd);
   const routeStart = contentSource.indexOf("function checkRouteChange()");
   const routeEnd = contentSource.indexOf("function handleVisibilityChange()", routeStart);

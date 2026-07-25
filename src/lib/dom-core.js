@@ -179,7 +179,9 @@
 
   function resolveOriginalText(value, record) {
     const text = String(value ?? "");
-    return record && text === record.translated ? String(record.original ?? "") : text;
+    return record && (text === record.translated || text === record.displayed)
+      ? String(record.original ?? "")
+      : text;
   }
 
   function shouldTranslateText(value) {

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title data-i18n="pdfWorkspaceTitle">PDF Translation Workspace</title>
+    <link rel="stylesheet" href="pdf.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <img src="../assets/icon.svg" alt="" width="38" height="38">
+        <div>
+          <strong data-i18n="extensionShortName">Smart Translator</strong>
+          <span data-i18n="pdfWorkspace">PDF workspace</span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="settingsButton" class="quiet" type="button" data-i18n="settings">Settings</button>
+        <label class="file-button" for="fileInput" data-i18n="choosePdf">Choose PDF</label>
+        <input id="fileInput" type="file" accept="application/pdf,.pdf">
+      </div>
+    </header>
+
+    <main>
+      <section class="intro" id="intro">
+        <p class="eyebrow" data-i18n="localDocument">Local document</p>
+        <h1 data-i18n="translatePdf">Translate a PDF without uploading the file</h1>
+        <p data-i18n="pdfIntroDescription">The document is parsed locally. Only extracted text is sent to your selected translation provider after you click Translate.</p>
+        <label class="drop-zone" id="dropZone" for="fileInput">
+          <strong data-i18n="dropPdf">Drop a PDF here</strong>
+          <span data-i18n="orChooseFile">or choose a file from this computer</span>
+        </label>
+        <p class="intro-status" id="introStatus" role="status"></p>
+      </section>
+
+      <section class="workspace" id="workspace" hidden>
+        <div class="document-heading">
+          <div>
+            <p class="eyebrow" data-i18n="currentDocument">Current document</p>
+            <div class="document-title">
+              <h1 id="documentName"></h1>
+              <span id="translationBadge" class="translation-badge" data-i18n="pdfTranslatedBadge" hidden>Translated</span>
+            </div>
+            <p id="documentSummary"></p>
+          </div>
+          <button id="removeButton" class="quiet danger" type="button" data-i18n="removeDocument">Remove</button>
+        </div>
+
+        <div class="toolbar">
+          <label>
+            <span data-i18n="translateInto">Translate into</span>
+            <select id="targetLanguage"></select>
+          </label>
+          <div>
+            <span data-i18n="pageView">Page view</span>
+            <div class="view-modes" role="group" aria-label="Page view" data-i18n-aria-label="pageView">
+              <button type="button" data-view-mode="original" data-i18n="viewOriginal">Original</button>
+              <button type="button" data-view-mode="translated" data-i18n="viewTranslated">Translated</button>
+              <button type="button" data-view-mode="bilingual" data-i18n="viewBilingual">Bilingual</button>
+            </div>
+          </div>
+          <label class="cache-toggle">
+            <input id="cacheTranslations" type="checkbox" checked>
+            <span>
+              <strong data-i18n="cachePdfTranslations">Cache translations</strong>
+              <small data-i18n="cachePdfTranslationsHint">Reuse identical text locally.</small>
+            </span>
+          </label>
+          <div class="translate-actions">
+            <button id="cancelButton" class="secondary" type="button" data-i18n="cancel" hidden>Cancel</button>
+            <button id="downloadButton" class="secondary" type="button" data-i18n="downloadTranslatedPdf" hidden>Download translated PDF</button>
+            <button id="translateButton" class="primary" type="button" data-i18n="translateDocument">Translate document</button>
+          </div>
+        </div>
+
+        <div class="progress" id="progress" role="status">
+          <span id="progressText" data-i18n="ready">Ready</span>
+          <i><b id="progressBar"></b></i>
+        </div>
+        <p class="layout-hint" data-i18n="pdfLayoutHint">The exported PDF flattens the page appearance and adds fitted, searchable translation text. Links, forms, annotations, and signatures are not retained.</p>
+
+        <div class="pages" id="pages"></div>
+      </section>
+    </main>
+
+    <template id="pageTemplate">
+      <article class="page-sheet">
+        <header><span class="page-number"></span></header>
+        <div class="page-views">
+          <figure class="page-original">
+            <figcaption data-i18n="selectionOriginal">Original</figcaption>
+            <div class="page-canvas">
+              <canvas></canvas>
+            </div>
+          </figure>
+          <figure class="page-translation">
+            <figcaption data-i18n="selectionTranslation">Translation</figcaption>
+            <div class="page-canvas">
+              <canvas></canvas>
+            </div>
+          </figure>
+        </div>
+      </article>
+    </template>
+
+    <script src="../vendor/browser-polyfill.js"></script>
+    <script src="../vendor/fontkit.js"></script>
+    <script src="../vendor/pdf-lib.js"></script>
+    <script src="../lib/ui-i18n.js"></script>
+    <script src="../lib/document-core.js"></script>
+    <script type="module" src="pdf.js"></script>
+  </body>
+</html>

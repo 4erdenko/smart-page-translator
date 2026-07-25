@@ -40,6 +40,12 @@
           </div>
         </div>
 
+        <div class="view-modes" id="viewModes" role="group" aria-label="Page view" data-i18n-aria-label="pageView" hidden>
+          <button type="button" data-view-mode="original" data-i18n="viewOriginal">Original</button>
+          <button type="button" data-view-mode="translated" data-i18n="viewTranslated">Translated</button>
+          <button type="button" data-view-mode="bilingual" data-i18n="viewBilingual">Bilingual</button>
+        </div>
+
         <details class="metric-details">
           <summary data-i18n="translationDetails">Translation details</summary>
           <div class="metrics" aria-label="Translation statistics" data-i18n-aria-label="translationStatistics">
@@ -52,7 +58,7 @@
 
       <div class="actions">
         <button id="translateButton" class="primary" type="button" data-i18n="translateThisPage">Translate this page</button>
-        <button id="viewButton" class="secondary" type="button" hidden data-i18n="showOriginal">Show original</button>
+        <button id="pdfButton" class="secondary" type="button" data-i18n="openPdf">PDF</button>
         <button id="settingsButton" class="secondary" type="button" data-i18n="settings">Settings</button>
       </div>
 

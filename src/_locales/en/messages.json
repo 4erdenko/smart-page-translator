@@ -291,7 +291,7 @@
     "message": "Maximum cached phrases"
   },
   "cacheLimitHint": {
-    "message": "Default: 8,000 phrases. Hard limits: 20,000 phrases and 16 MiB."
+    "message": "Default: 16,000 phrases. Hard limits: 20,000 phrases and 16 MiB."
   },
   "clearTranslationCache": {
     "message": "Clear translation cache"
@@ -300,7 +300,7 @@
     "message": "Privacy note"
   },
   "privacyDescription": {
-    "message": "When you enable a website, its non-editable text is sent to the selected provider for translation. Form values and editable text are deliberately skipped."
+    "message": "Automatic page translation skips form values and editable text. A field is sent only when you explicitly choose Translate this field, and that result is not cached."
   },
   "saveSettings": {
     "message": "Save settings"
@@ -343,5 +343,215 @@
   },
   "cacheCount": {
     "message": "{count} phrases · {used} / {maximum}"
+  },
+  "commandToggleTranslation": {
+    "message": "Toggle page translation"
+  },
+  "commandCycleViewMode": {
+    "message": "Cycle original, translated, and bilingual views"
+  },
+  "commandTranslateEditable": {
+    "message": "Translate the focused editable field"
+  },
+  "pageView": {
+    "message": "Page view"
+  },
+  "viewOriginal": {
+    "message": "Original"
+  },
+  "viewTranslated": {
+    "message": "Translated"
+  },
+  "viewBilingual": {
+    "message": "Bilingual"
+  },
+  "bilingualViewActive": {
+    "message": "Bilingual view"
+  },
+  "bilingualViewDetails": {
+    "message": "Original and translated page text are shown together."
+  },
+  "openPdf": {
+    "message": "PDF"
+  },
+  "contextTranslateEditable": {
+    "message": "Translate this field"
+  },
+  "editableSelectionRequired": {
+    "message": "Focus a text field, or select text inside a rich editor, then try again."
+  },
+  "editableTranslating": {
+    "message": "Translating field…"
+  },
+  "editableChanged": {
+    "message": "The field changed while translation was running, so it was not overwritten."
+  },
+  "editableTranslated": {
+    "message": "Field translated"
+  },
+  "welcomeEyebrow": {
+    "message": "Ready for any page"
+  },
+  "welcomeTitle": {
+    "message": "Welcome to Smart Page Translator"
+  },
+  "welcomeDescription": {
+    "message": "Translate complete dynamic pages, keep brands intact, and reuse results from your local cache."
+  },
+  "quickSetup": {
+    "message": "Quick setup"
+  },
+  "chooseTargetLanguage": {
+    "message": "Choose your translation language"
+  },
+  "keyFeatures": {
+    "message": "Key features"
+  },
+  "welcomeWholePage": {
+    "message": "Whole-page translation"
+  },
+  "welcomeWholePageDescription": {
+    "message": "Dynamic content and product descriptions continue translating as the page changes."
+  },
+  "welcomeViews": {
+    "message": "Three reading views"
+  },
+  "welcomeViewsDescription": {
+    "message": "Switch between original, translated, and bilingual text without another provider request."
+  },
+  "welcomePrivateActions": {
+    "message": "Explicit private actions"
+  },
+  "welcomePrivateActionsDescription": {
+    "message": "Editable fields and local PDFs are translated only after you request it."
+  },
+  "keyboardShortcuts": {
+    "message": "Keyboard shortcuts"
+  },
+  "workWithoutLeavingPage": {
+    "message": "Work without leaving the page"
+  },
+  "shortcutToggle": {
+    "message": "Toggle translation"
+  },
+  "shortcutCycle": {
+    "message": "Cycle reading view"
+  },
+  "shortcutEditable": {
+    "message": "Translate focused field"
+  },
+  "shortcutUnassigned": {
+    "message": "Set in browser"
+  },
+  "openPdfWorkspace": {
+    "message": "Open PDF workspace"
+  },
+  "configureProvider": {
+    "message": "Configure provider"
+  },
+  "done": {
+    "message": "Done"
+  },
+  "languageSaved": {
+    "message": "Language saved."
+  },
+  "pdfWorkspaceTitle": {
+    "message": "PDF Translation Workspace"
+  },
+  "pdfWorkspace": {
+    "message": "PDF workspace"
+  },
+  "choosePdf": {
+    "message": "Choose PDF"
+  },
+  "localDocument": {
+    "message": "Local document"
+  },
+  "translatePdf": {
+    "message": "Translate a PDF without uploading the file"
+  },
+  "pdfIntroDescription": {
+    "message": "The document is parsed locally. Only extracted text is sent to your selected translation provider after you click Translate."
+  },
+  "dropPdf": {
+    "message": "Drop a PDF here"
+  },
+  "orChooseFile": {
+    "message": "or choose a file from this computer"
+  },
+  "currentDocument": {
+    "message": "Current document"
+  },
+  "removeDocument": {
+    "message": "Remove"
+  },
+  "cachePdfTranslations": {
+    "message": "Cache translations"
+  },
+  "cachePdfTranslationsHint": {
+    "message": "Reuse identical text locally."
+  },
+  "cancel": {
+    "message": "Cancel"
+  },
+  "translateDocument": {
+    "message": "Translate document"
+  },
+  "downloadTranslatedPdf": {
+    "message": "Download translated PDF"
+  },
+  "pdfLayoutHint": {
+    "message": "The exported PDF flattens the page appearance and adds fitted, searchable translation text. Links, forms, annotations, and signatures are not retained."
+  },
+  "pdfPageNumber": {
+    "message": "Page {number}"
+  },
+  "pdfDocumentSummary": {
+    "message": "{pages} pages · {characters} characters · {translated} translated"
+  },
+  "invalidPdf": {
+    "message": "Choose a PDF file up to 100 MiB."
+  },
+  "readingPdf": {
+    "message": "Reading PDF locally…"
+  },
+  "pdfTooManyPages": {
+    "message": "This PDF has more than 1,000 pages."
+  },
+  "readingPdfPage": {
+    "message": "Reading page {current} of {total}…"
+  },
+  "pdfTooMuchText": {
+    "message": "This PDF contains more than 5,000,000 extracted characters."
+  },
+  "pdfReady": {
+    "message": "PDF ready. Translation starts only when you request it."
+  },
+  "pdfNoText": {
+    "message": "No translatable text was found in this PDF."
+  },
+  "translatingPdf": {
+    "message": "Translating {current} of {total} batches…"
+  },
+  "pdfTranslated": {
+    "message": "PDF translation complete."
+  },
+  "pdfTranslatedBadge": {
+    "message": "Translated"
+  },
+  "exportingPdf": {
+    "message": "Building PDF {current} of {total}…"
+  },
+  "pdfDownloadReady": {
+    "message": "Translated PDF download started."
+  },
+  "pdfExportTooLarge": {
+    "message": "The flattened PDF exceeds the safe 128 MiB export limit. Split the document and try again."
+  },
+  "pdfTranslationDoesNotFit": {
+    "message": "A translated text block does not fit its PDF region. Review the document layout."
+  },
+  "translationCancelled": {
+    "message": "Translation cancelled."
   }
 }
