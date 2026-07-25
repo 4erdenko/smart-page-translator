@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Smart Page Translator</title>
+    <title data-i18n="extensionName">Smart Page Translator</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
@@ -11,61 +11,55 @@
       <header class="header">
         <img src="../assets/icon.svg" alt="" width="38" height="38">
         <div>
-          <h1>Smart Translator</h1>
-          <p id="siteLabel">Current page</p>
+          <h1 data-i18n="extensionShortName">Smart Translator</h1>
+          <p id="siteLabel" data-i18n="currentPage">Current page</p>
         </div>
         <span class="activity-orb" aria-hidden="true"><i></i></span>
       </header>
 
       <section class="card">
         <label class="field" for="siteMode">
-          <span>On this website</span>
+          <span data-i18n="onThisWebsite">On this website</span>
           <select id="siteMode">
-            <option value="auto">Follow language rules</option>
-            <option value="always">Always translate</option>
-            <option value="never">Never translate</option>
+            <option value="auto" data-i18n="followLanguageRules">Follow language rules</option>
+            <option value="always" data-i18n="alwaysTranslate">Always translate</option>
+            <option value="never" data-i18n="neverTranslate">Never translate</option>
           </select>
         </label>
 
         <label class="field" for="targetLanguage">
-          <span>Translate into</span>
-          <select id="targetLanguage">
-            <option value="ru">Russian</option>
-            <option value="en">English</option>
-            <option value="pt">Portuguese</option>
-            <option value="es">Spanish</option>
-            <option value="fr">French</option>
-            <option value="de">German</option>
-            <option value="it">Italian</option>
-            <option value="nl">Dutch</option>
-            <option value="uk">Ukrainian</option>
-            <option value="pl">Polish</option>
-          </select>
+          <span data-i18n="translateInto">Translate into</span>
+          <select id="targetLanguage"></select>
         </label>
 
         <div class="status" id="statusBox" data-tone="idle">
           <span class="status-dot"></span>
           <div>
-            <strong id="statusTitle">Ready</strong>
-            <p id="statusDetails">Enable translation for this website.</p>
+            <strong id="statusTitle" data-i18n="ready">Ready</strong>
+            <p id="statusDetails" data-i18n="enableTranslation">Enable translation for this website.</p>
           </div>
         </div>
 
-        <div class="metrics" aria-label="Translation statistics">
-          <div><strong id="translatedCount">0</strong><span>elements</span></div>
-          <div><strong id="cacheHitCount">0</strong><span>cache hits</span></div>
-          <div><strong id="apiItemCount">0</strong><span>API phrases</span></div>
-        </div>
+        <details class="metric-details">
+          <summary data-i18n="translationDetails">Translation details</summary>
+          <div class="metrics" aria-label="Translation statistics" data-i18n-aria-label="translationStatistics">
+            <div><strong id="translatedCount">0</strong><span data-i18n="elements">elements</span></div>
+            <div><strong id="cacheHitCount">0</strong><span data-i18n="cacheHits">cache hits</span></div>
+            <div><strong id="apiItemCount">0</strong><span data-i18n="apiPhrases">API phrases</span></div>
+          </div>
+        </details>
       </section>
 
       <div class="actions">
-        <button id="translateButton" class="primary" type="button">Scan page again</button>
-        <button id="settingsButton" class="secondary" type="button">Settings</button>
+        <button id="translateButton" class="primary" type="button" data-i18n="translateThisPage">Translate this page</button>
+        <button id="viewButton" class="secondary" type="button" hidden data-i18n="showOriginal">Show original</button>
+        <button id="settingsButton" class="secondary" type="button" data-i18n="settings">Settings</button>
       </div>
 
-      <p class="footnote"><span id="cacheEntries">0</span> translations saved locally</p>
+      <p class="footnote" id="cacheSummary">0 translations saved locally</p>
     </main>
     <script src="../vendor/browser-polyfill.js"></script>
+    <script src="../lib/ui-i18n.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

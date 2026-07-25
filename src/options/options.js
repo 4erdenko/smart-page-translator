@@ -1,5 +1,15 @@
 (function initializeOptions() {
   const api = globalThis.browser;
+  const {
+    fillLanguageChoices,
+    fillLanguageSelect,
+    localizeDocument,
+    t
+  } = globalThis.SmartTranslationUiI18n;
+  localizeDocument();
+  fillLanguageSelect(document.querySelector("#sourceLanguage"), { includeAuto: true });
+  fillLanguageSelect(document.querySelector("#targetLanguage"));
+  fillLanguageChoices(document.querySelector("#automaticLanguages"));
   let cacheMaximumBytes = 16 * 1024 * 1024;
   let currentProvider = "deepseek";
   let providerModels = {};
@@ -19,6 +29,7 @@
     keyHint: document.querySelector("#keyHint"),
     model: document.querySelector("#model"),
     neverSites: document.querySelector("#neverSites"),
+    protectedTerms: document.querySelector("#protectedTerms"),
     provider: document.querySelector("#provider"),
     refreshModelsButton: document.querySelector("#refreshModelsButton"),
     saveStatus: document.querySelector("#saveStatus"),
@@ -83,11 +94,21 @@
     const configured = Boolean(providerStatuses[provider]?.hasApiKey);
     const label = getProviderLabel(provider);
     elements.keyBadge.className = `badge ${configured ? "success" : "error"}`;
-    elements.keyBadge.textContent = configured ? `${label} key configured` : `${label} key missing`;
+    elements.keyBadge.textContent = configured
+      ? t("keyConfigured", { provider: label }, `${label} key configured`)
+      : t("keyMissing", { provider: label }, `${label} key missing`);
     elements.clearKeyButton.disabled = !configured;
     elements.keyHint.textContent = configured
-      ? `The ${label} key is stored locally. Enter a replacement only when you want to rotate it.`
-      : `Enter a ${label} API key, then load the models available to this account.`;
+      ? t(
+        "keyStoredHint",
+        { provider: label },
+        `The ${label} key is stored locally. Enter a replacement only when you want to rotate it.`
+      )
+      : t(
+        "keyEntryHint",
+        { provider: label },
+        `Enter a ${label} API key, then load the models available to this account.`
+      );
     renderModelOptions(provider);
   }
 
@@ -106,7 +127,12 @@
     elements.targetLanguage.value = response.settings.targetLanguage;
     elements.cacheMaxEntries.value = String(response.settings.cacheMaxEntries);
     cacheMaximumBytes = Number(response.cacheMaxBytes) || cacheMaximumBytes;
-    elements.cacheCount.textContent = `${response.cacheEntries || 0} phrases · ${formatMiB(response.cacheBytes)} / ${formatMiB(cacheMaximumBytes)}`;
+    elements.cacheCount.textContent = t("cacheCount", {
+      count: response.cacheEntries || 0,
+      maximum: formatMiB(cacheMaximumBytes),
+      used: formatMiB(response.cacheBytes)
+    }, `${response.cacheEntries || 0} phrases · ${formatMiB(response.cacheBytes)} / ${formatMiB(cacheMaximumBytes)}`);
+    elements.protectedTerms.value = (response.settings.protectedTerms || []).join("\n");
 
     for (const input of elements.autoLanguageInputs) {
       input.checked = automaticLanguages.has(input.value);
@@ -191,7 +217,7 @@
     event.preventDefault();
     const submitButton = event.submitter || elements.form.querySelector('button[type="submit"]');
     submitButton.disabled = true;
-    showSaveStatus("Saving…");
+    showSaveStatus(t("saving", null, "Saving…"));
 
     try {
       const provider = currentProvider;
@@ -207,13 +233,14 @@
           cacheMaxEntries: Number(elements.cacheMaxEntries.value),
           provider,
           providerModels,
+          protectedTerms: elements.protectedTerms.value.split(/\r?\n/u).map((value) => value.trim()).filter(Boolean),
           siteRules: buildSiteRules(),
           sourceLanguage: elements.sourceLanguage.value,
           targetLanguage: elements.targetLanguage.value
         }
       });
       render(response);
-      showSaveStatus("Settings saved.");
+      showSaveStatus(t("settingsSaved", null, "Settings saved."));
     } catch (error) {
       showSaveStatus(String(error?.message || error), true);
     } finally {
@@ -223,23 +250,26 @@
 
   elements.refreshModelsButton.addEventListener("click", async () => {
     elements.refreshModelsButton.disabled = true;
-    elements.refreshModelsButton.textContent = "Loading…";
+    elements.refreshModelsButton.textContent = t("loading", null, "Loading…");
 
     try {
       const provider = currentProvider;
       const models = await loadModels(true);
-      showSaveStatus(`${models.length} compatible ${getProviderLabel(provider)} models loaded.`);
+      showSaveStatus(t("modelsLoaded", {
+        count: models.length,
+        provider: getProviderLabel(provider)
+      }, `${models.length} compatible ${getProviderLabel(provider)} models loaded.`));
     } catch (error) {
       showSaveStatus(String(error?.message || error), true);
     } finally {
       elements.refreshModelsButton.disabled = false;
-      elements.refreshModelsButton.textContent = "Load models";
+      elements.refreshModelsButton.textContent = t("loadModels", null, "Load models");
     }
   });
 
   elements.testButton.addEventListener("click", async () => {
     elements.testButton.disabled = true;
-    elements.testButton.textContent = "Testing…";
+    elements.testButton.textContent = t("testing", null, "Testing…");
 
     try {
       const provider = currentProvider;
@@ -251,12 +281,15 @@
         model,
         provider
       });
-      showSaveStatus(`${getProviderLabel(response.provider)} connection works. ${response.model} is available.`);
+      showSaveStatus(t("connectionWorks", {
+        model: response.model,
+        provider: getProviderLabel(response.provider)
+      }, `${getProviderLabel(response.provider)} connection works. ${response.model} is available.`));
     } catch (error) {
       showSaveStatus(String(error?.message || error), true);
     } finally {
       elements.testButton.disabled = false;
-      elements.testButton.textContent = "Test connection";
+      elements.testButton.textContent = t("testConnection", null, "Test connection");
     }
   });
 
@@ -277,7 +310,11 @@
         renderProviderState(provider);
       }
 
-      showSaveStatus(`${getProviderLabel(provider)} API key removed.`);
+      showSaveStatus(t(
+        "keyRemoved",
+        { provider: getProviderLabel(provider) },
+        `${getProviderLabel(provider)} API key removed.`
+      ));
     } catch (error) {
       showSaveStatus(String(error?.message || error), true);
     } finally {
@@ -290,8 +327,12 @@
 
     try {
       await api.runtime.sendMessage({ type: "clearCache" });
-      elements.cacheCount.textContent = `0 phrases · 0.0 MiB / ${formatMiB(cacheMaximumBytes)}`;
-      showSaveStatus("Translation cache cleared.");
+      elements.cacheCount.textContent = t("cacheCount", {
+        count: 0,
+        maximum: formatMiB(cacheMaximumBytes),
+        used: "0.0 MiB"
+      }, `0 phrases · 0.0 MiB / ${formatMiB(cacheMaximumBytes)}`);
+      showSaveStatus(t("cacheCleared", null, "Translation cache cleared."));
     } catch (error) {
       showSaveStatus(String(error?.message || error), true);
     } finally {

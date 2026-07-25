@@ -1,0 +1,347 @@
+{
+  "extensionName": {
+    "message": "Умный переводчик страниц"
+  },
+  "extensionDescription": {
+    "message": "Полностью переводит веб-страницы с помощью выбранной AI-модели и сохраняет переводы в локальном кэше."
+  },
+  "extensionShortName": {
+    "message": "Умный переводчик"
+  },
+  "currentPage": {
+    "message": "Текущая страница"
+  },
+  "restrictedPage": {
+    "message": "Недоступная страница"
+  },
+  "localFile": {
+    "message": "Локальный файл"
+  },
+  "onThisWebsite": {
+    "message": "На этом сайте"
+  },
+  "followLanguageRules": {
+    "message": "По языковым правилам"
+  },
+  "alwaysTranslate": {
+    "message": "Всегда переводить"
+  },
+  "neverTranslate": {
+    "message": "Никогда не переводить"
+  },
+  "translateInto": {
+    "message": "Переводить на"
+  },
+  "ready": {
+    "message": "Готово"
+  },
+  "enableTranslation": {
+    "message": "Включите перевод для этого сайта."
+  },
+  "translationStatistics": {
+    "message": "Статистика перевода"
+  },
+  "translationDetails": {
+    "message": "Подробности перевода"
+  },
+  "elements": {
+    "message": "элементов"
+  },
+  "cacheHits": {
+    "message": "из кэша"
+  },
+  "apiPhrases": {
+    "message": "API-фраз"
+  },
+  "translateThisPage": {
+    "message": "Перевести страницу"
+  },
+  "retryTranslation": {
+    "message": "Повторить перевод"
+  },
+  "showOriginal": {
+    "message": "Показать оригинал"
+  },
+  "showTranslation": {
+    "message": "Показать перевод"
+  },
+  "settings": {
+    "message": "Настройки"
+  },
+  "translationsSavedLocally": {
+    "message": "Переводов в локальном кэше: {count}"
+  },
+  "apiKeyRequired": {
+    "message": "Нужен API-ключ"
+  },
+  "apiKeyRequiredDetails": {
+    "message": "Откройте настройки и добавьте API-ключ {provider}."
+  },
+  "pageUnavailable": {
+    "message": "Страница недоступна"
+  },
+  "pageUnavailableDetails": {
+    "message": "Браузер не разрешает расширениям работать на этой странице."
+  },
+  "reloadAfterInstall": {
+    "message": "Перезагрузите страницу после установки расширения."
+  },
+  "translationStopped": {
+    "message": "Перевод остановлен"
+  },
+  "translationSpreading": {
+    "message": "Перевод распространяется"
+  },
+  "translationSpreadingDetails": {
+    "message": "Текст на языке «{language}» обрабатывается параллельно."
+  },
+  "pageTranslated": {
+    "message": "Страница переведена"
+  },
+  "automaticRuleMatched": {
+    "message": "Язык «{language}» соответствует правилам автоперевода."
+  },
+  "manualTranslationActive": {
+    "message": "Для этой страницы включён разовый перевод."
+  },
+  "siteAlwaysTranslated": {
+    "message": "Этот сайт переводится всегда."
+  },
+  "dynamicContentTranslated": {
+    "message": "Новый контент также будет переведён."
+  },
+  "showingOriginal": {
+    "message": "Показан оригинал"
+  },
+  "showingOriginalDetails": {
+    "message": "Перевод готов и может быть восстановлен из локального кэша."
+  },
+  "watchingPage": {
+    "message": "Слежу за страницей"
+  },
+  "watchingPageDetails": {
+    "message": "Ожидаю текст для перевода или ответ сервиса."
+  },
+  "privateTab": {
+    "message": "Приватная вкладка"
+  },
+  "privateTabDetails": {
+    "message": "Используйте разовый перевод — текст не будет сохранён в кэше."
+  },
+  "translationDisabled": {
+    "message": "Перевод отключён"
+  },
+  "neverTranslateDetails": {
+    "message": "Этот сайт добавлен в список исключений."
+  },
+  "waitingForRule": {
+    "message": "Ожидаю правило"
+  },
+  "waitingForRuleDetails": {
+    "message": "Язык «{language}» не выбран для автоматического перевода."
+  },
+  "pageLanguage": {
+    "message": "язык страницы"
+  },
+  "couldNotUpdateWebsite": {
+    "message": "Не удалось изменить правило сайта"
+  },
+  "couldNotChangeLanguage": {
+    "message": "Не удалось изменить язык"
+  },
+  "extensionError": {
+    "message": "Ошибка расширения"
+  },
+  "contextTranslateSelection": {
+    "message": "Перевести выделенный текст"
+  },
+  "translateSelection": {
+    "message": "Перевести"
+  },
+  "selectionTranslating": {
+    "message": "Перевожу выделенный текст…"
+  },
+  "selectionOriginal": {
+    "message": "Оригинал"
+  },
+  "selectionTranslation": {
+    "message": "Перевод"
+  },
+  "selectionTooLong": {
+    "message": "Выделите не более 4 000 символов."
+  },
+  "close": {
+    "message": "Закрыть"
+  },
+  "detectAutomatically": {
+    "message": "Определять автоматически"
+  },
+  "settingsTitle": {
+    "message": "Настройки Умного переводчика"
+  },
+  "webExtensions": {
+    "message": "WebExtensions"
+  },
+  "heroSubtitle": {
+    "message": "Точный полный перевод страниц с постоянным локальным кэшем."
+  },
+  "translationProvider": {
+    "message": "Сервис перевода"
+  },
+  "providerDescription": {
+    "message": "Выберите сервис, сохраните ключ локально и загрузите доступные модели."
+  },
+  "checking": {
+    "message": "Проверка"
+  },
+  "provider": {
+    "message": "Сервис"
+  },
+  "model": {
+    "message": "Модель"
+  },
+  "apiKey": {
+    "message": "API-ключ"
+  },
+  "apiKeyPlaceholder": {
+    "message": "Оставьте пустым, чтобы сохранить текущий ключ"
+  },
+  "apiKeyHint": {
+    "message": "Ключ хранится только в локальном хранилище расширения и больше не отображается."
+  },
+  "loadModels": {
+    "message": "Загрузить модели"
+  },
+  "testConnection": {
+    "message": "Проверить подключение"
+  },
+  "removeKey": {
+    "message": "Удалить ключ"
+  },
+  "translation": {
+    "message": "Перевод"
+  },
+  "translationDescription": {
+    "message": "Выбранные сервис и модель применяются ко всем переводимым сайтам."
+  },
+  "sourceLanguage": {
+    "message": "Исходный язык"
+  },
+  "targetLanguage": {
+    "message": "Язык перевода"
+  },
+  "automaticTranslation": {
+    "message": "Автоматический перевод"
+  },
+  "automaticDescription": {
+    "message": "Выберите языки и сайты, которые должны переводиться без дополнительного нажатия."
+  },
+  "localRules": {
+    "message": "Локальные правила"
+  },
+  "translateLanguagesAutomatically": {
+    "message": "Автоматически переводить эти языки"
+  },
+  "languageDetectionPrivacy": {
+    "message": "Язык определяется локально. Текст отправляется сервису только после совпадения с правилом."
+  },
+  "alwaysTranslateWebsites": {
+    "message": "Всегда переводить сайты"
+  },
+  "alwaysSitesPlaceholder": {
+    "message": "shop.example.com\nhttps://news.example.org"
+  },
+  "alwaysSitesHint": {
+    "message": "Один домен или origin на строку. Правило применяется ко всем путям."
+  },
+  "neverTranslateWebsites": {
+    "message": "Никогда не переводить сайты"
+  },
+  "neverSitesPlaceholder": {
+    "message": "bank.example.com"
+  },
+  "neverSitesHint": {
+    "message": "Эти правила имеют приоритет над автоматическим определением языка."
+  },
+  "textShimmer": {
+    "message": "Мерцание текста"
+  },
+  "textShimmerHint": {
+    "message": "Кратко подсвечивать только текст, который сейчас переводится."
+  },
+  "protectedTerms": {
+    "message": "Защищённые имена и термины"
+  },
+  "protectedTermsDescription": {
+    "message": "Сохранять выбранные бренды, имена людей, линейки продуктов и модели без изменений."
+  },
+  "protectedTermsPlaceholder": {
+    "message": "Apple\nAirPods Pro\nИван Иванов"
+  },
+  "protectedTermsHint": {
+    "message": "Один точный термин на строку. Регистр не учитывается."
+  },
+  "localCache": {
+    "message": "Локальный кэш"
+  },
+  "localCacheDescription": {
+    "message": "Одинаковые фразы используются повторно без нового API-запроса."
+  },
+  "maximumCachedPhrases": {
+    "message": "Максимум фраз в кэше"
+  },
+  "cacheLimitHint": {
+    "message": "По умолчанию: 8 000 фраз. Жёсткие границы: 20 000 фраз и 16 МиБ."
+  },
+  "clearTranslationCache": {
+    "message": "Очистить кэш переводов"
+  },
+  "privacyNote": {
+    "message": "Конфиденциальность"
+  },
+  "privacyDescription": {
+    "message": "После включения сайта его нередактируемый текст отправляется выбранному сервису. Значения форм и редактируемый текст пропускаются."
+  },
+  "saveSettings": {
+    "message": "Сохранить настройки"
+  },
+  "keyConfigured": {
+    "message": "Ключ {provider} настроен"
+  },
+  "keyMissing": {
+    "message": "Нет ключа {provider}"
+  },
+  "keyStoredHint": {
+    "message": "Ключ {provider} хранится локально. Введите новый только для его замены."
+  },
+  "keyEntryHint": {
+    "message": "Введите API-ключ {provider}, затем загрузите доступные модели."
+  },
+  "saving": {
+    "message": "Сохранение…"
+  },
+  "settingsSaved": {
+    "message": "Настройки сохранены."
+  },
+  "loading": {
+    "message": "Загрузка…"
+  },
+  "modelsLoaded": {
+    "message": "Загружено совместимых моделей {provider}: {count}."
+  },
+  "testing": {
+    "message": "Проверка…"
+  },
+  "connectionWorks": {
+    "message": "Подключение к {provider} работает. Модель {model} доступна."
+  },
+  "keyRemoved": {
+    "message": "API-ключ {provider} удалён."
+  },
+  "cacheCleared": {
+    "message": "Кэш переводов очищен."
+  },
+  "cacheCount": {
+    "message": "Фраз: {count} · {used} / {maximum}"
+  }
+}

@@ -55,3 +55,14 @@ test("rejects source archive paths outside the project root", async (context) =>
     );
   }
 });
+
+test("includes locale resources and the shared UI helper in browser builds", async () => {
+  const { getReleaseSourceFiles } = await import("../scripts/build.mjs");
+
+  for (const target of ["firefox", "chrome"]) {
+    const files = getReleaseSourceFiles(target);
+    assert.ok(files.includes("_locales/en/messages.json"));
+    assert.ok(files.includes("_locales/ru/messages.json"));
+    assert.ok(files.includes("lib/ui-i18n.js"));
+  }
+});

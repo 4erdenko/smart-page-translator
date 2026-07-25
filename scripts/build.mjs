@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = fileURLToPath(import.meta.url);
+const localeFiles = Object.freeze(["en", "ru"].map((locale) => `_locales/${locale}/messages.json`));
 const sharedSourceFiles = Object.freeze([
+  ...localeFiles,
   "assets/icon-16.png",
   "assets/icon-32.png",
   "assets/icon-48.png",
@@ -16,6 +18,7 @@ const sharedSourceFiles = Object.freeze([
   "lib/dom-core.js",
   "lib/provider-core.js",
   "lib/translation-core.js",
+  "lib/ui-i18n.js",
   "options/options.css",
   "options/options.html",
   "options/options.js",

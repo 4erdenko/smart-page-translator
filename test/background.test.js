@@ -8,6 +8,7 @@ const translationCore = require("../src/lib/translation-core.js");
 
 const backgroundSource = readFileSync(require.resolve("../src/background.js"), "utf8");
 const contentSource = readFileSync(require.resolve("../src/content.js"), "utf8");
+const popupSource = readFileSync(require.resolve("../src/popup/popup.js"), "utf8");
 const CACHE_ENTRY_PREFIX = "translationCacheEntryV1:";
 
 function getStoredCache(storageData) {
@@ -101,6 +102,7 @@ function createHarness({
   tabSendMessage
 }) {
   let messageListener;
+  let contextMenuListener;
   const actionCalls = [];
   const accessLevelCalls = [];
   const storageGetKeys = [];
@@ -118,11 +120,23 @@ function createHarness({
         actionCalls.push({ method: "setBadgeText", options });
       }
     },
+    contextMenus: {
+      create() {},
+      async remove() {},
+      onClicked: {
+        addListener(listener) {
+          contextMenuListener = listener;
+        }
+      }
+    },
     i18n: {
       detectLanguage: detectLanguage || (async () => ({
         isReliable: true,
         languages: [{ language: "pt", percentage: 100 }]
-      }))
+      })),
+      getMessage() {
+        return "";
+      }
     },
     runtime: {
       getURL() {
@@ -230,6 +244,9 @@ function createHarness({
     }) {
       return messageListener(message, sender);
     },
+    sendContextMenu(info, tab = { id: 7 }) {
+      return contextMenuListener(info, tab);
+    },
     storageData,
     storageGetKeys,
     tabMessages
@@ -287,6 +304,67 @@ test("content settings do not load the translation cache", async () => {
   assert.equal(harness.storageGetKeys.includes(null), true);
   assert.equal(Object.hasOwn(harness.storageData, "translationCacheV1"), false);
   assert.equal(Object.keys(getStoredCache(harness.storageData)).length, 1);
+});
+
+test("normalizes protected terms and exposes them without other private settings", async () => {
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      settingsV1: {
+        protectedTerms: [
+          "  AirPods   Pro  ",
+          "airpods pro",
+          "A",
+          "x".repeat(101),
+          "Jane Doe"
+        ]
+      }
+    }
+  });
+  const contentSettings = await harness.send(
+    { type: "getSettings" },
+    contentSender()
+  );
+
+  assert.deepEqual(
+    Array.from(contentSettings.settings.protectedTerms),
+    ["AirPods Pro", "Jane Doe"]
+  );
+  assert.equal(Object.hasOwn(contentSettings.settings, "siteRules"), false);
+});
+
+test("routes the selection context menu to the originating frame", async () => {
+  const harness = createHarness({ fetchImpl: async () => createResponse([]) });
+
+  harness.sendContextMenu({
+    frameId: 3,
+    menuItemId: "translate-selection",
+    selectionText: "Selected text"
+  }, { id: 21 });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.tabMessages.at(-1))), {
+    message: {
+      type: "translateSelection",
+      text: "Selected text"
+    },
+    options: { frameId: 3 },
+    tabId: 21
+  });
+});
+
+test("does not translate context-menu selections from editable fields", async () => {
+  const harness = createHarness({ fetchImpl: async () => createResponse([]) });
+
+  harness.sendContextMenu({
+    editable: true,
+    frameId: 0,
+    menuItemId: "translate-selection",
+    selectionText: "Private draft"
+  }, { id: 21 });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(harness.tabMessages, []);
 });
 
 test("cross-origin frames require their own explicit always rule", async () => {
@@ -788,7 +866,10 @@ test("invalidates stale page work and refreshes automatic policy after SPA navig
   const handlerEnd = contentSource.indexOf("function handleVisibilityChange()", handlerStart);
   const handler = contentSource.slice(handlerStart, handlerEnd);
 
-  assert.match(handler, /policyRevision \+= 1;\s+revision \+= 1;\s+clearPending\(\);/u);
+  assert.match(
+    handler,
+    /policyRevision \+= 1;\s+revision \+= 1;\s+closeSelectionUi\(\);\s+clearPending\(\);/u
+  );
   assert.match(handler, /routeRescanPending = true;/u);
   assert.match(handler, /shouldRefreshRoutePolicy\(state\.siteMode, state\.sourceLanguage\)/u);
   assert.match(handler, /applyPolicy\(currentSettings, state\.siteMode\)\.then\(finishRouteRescan\)/u);
@@ -815,12 +896,12 @@ test("stops page observers when refreshing settings fails", () => {
 
 test("starts one-time translation and route monitoring after a manual retry", () => {
   const handlerStart = contentSource.indexOf('if (message?.type === "translateNow")');
-  const handlerEnd = contentSource.indexOf('if (message?.type === "restoreNow")', handlerStart);
+  const handlerEnd = contentSource.indexOf('if (message?.type === "restoreNow"', handlerStart);
   const handler = contentSource.slice(handlerStart, handlerEnd);
 
   assert.match(
     handler,
-    /state\.error = "";\s+state\.enabled = true;\s+state\.siteMode = "session";\s+routeRescanPending = false;\s+updateRouteMonitoring\(\);\s+resumeObserver\(\);/u
+    /state\.error = "";\s+state\.enabled = true;\s+state\.siteMode = "session";\s+state\.viewMode = "translated";\s+routeRescanPending = false;\s+updateRouteMonitoring\(\);\s+resumeObserver\(\);/u
   );
 });
 
@@ -828,7 +909,7 @@ test("discovers brand terms before translation batches can leave the page", () =
   const scanStart = contentSource.indexOf("function scanDocument()");
   const scanEnd = contentSource.indexOf("function scanSubtree(", scanStart);
   const documentScan = contentSource.slice(scanStart, scanEnd);
-  const batchStart = contentSource.indexOf("function takeBatch()");
+  const batchStart = contentSource.indexOf("function takeBatch(");
   const batchEnd = contentSource.indexOf("function trackTextNode(", batchStart);
   const takeBatch = contentSource.slice(batchStart, batchEnd);
 
@@ -836,7 +917,7 @@ test("discovers brand terms before translation batches can leave the page", () =
   assert.match(documentScan, /scanPhase === "brands"[\s\S]*collectBrandNode\(node\)/u);
   assert.match(contentSource, /const brandElement = findClosestTextKindElement\(element, "brand-name"\);/u);
   assert.match(takeBatch, /segment\.protectedTerms = selectProtectedTerms\(/u);
-  assert.equal((contentSource.match(/selectProtectedTerms\(/gu) || []).length, 1);
+  assert.ok((contentSource.match(/selectProtectedTerms\(/gu) || []).length >= 2);
   assert.match(contentSource, /const textKind = getInheritedTextKind\(node\.parentElement\);/u);
   assert.match(contentSource, /activeBrandScanCount > 0/u);
 });
@@ -847,7 +928,57 @@ test("cancels stale translation requests when pending page work is cleared", () 
   const handler = contentSource.slice(handlerStart, handlerEnd);
 
   assert.match(handler, /cancelActiveTranslations\(\);/u);
-  assert.match(contentSource, /window\.addEventListener\("pagehide", cancelActiveTranslations\);/u);
+  assert.match(contentSource, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*cancelActiveTranslations\(\);/u);
+});
+
+test("keeps original view idle until translation is explicitly restored", () => {
+  const originalStart = contentSource.indexOf("async function showOriginal()");
+  const originalEnd = contentSource.indexOf("async function showTranslation()", originalStart);
+  const originalHandler = contentSource.slice(originalStart, originalEnd);
+  const translatedStart = originalEnd;
+  const translatedEnd = contentSource.indexOf("function destroySelectionUi()", translatedStart);
+  const translatedHandler = contentSource.slice(translatedStart, translatedEnd);
+
+  assert.match(originalHandler, /state\.viewMode = "original";\s+await restorePage\(\);/u);
+  assert.match(contentSource, /return state\.enabled && state\.viewMode === "translated"/u);
+  assert.match(translatedHandler, /state\.viewMode = "translated";[\s\S]*resumeObserver\(\);[\s\S]*scanSubtree\(document\);/u);
+});
+
+test("uses one idle lane for offscreen translation work", () => {
+  const drainStart = contentSource.indexOf("function drainPending()");
+  const drainEnd = contentSource.indexOf("function cancelScheduledFlush()", drainStart);
+  const drain = contentSource.slice(drainStart, drainEnd);
+  const scheduleStart = contentSource.indexOf("function scheduleFlush()");
+  const scheduleEnd = contentSource.indexOf("function cancelActiveTranslations()", scheduleStart);
+  const schedule = contentSource.slice(scheduleStart, scheduleEnd);
+
+  assert.match(drain, /let batch = takeBatch\(true\);/u);
+  assert.match(drain, /activeOffscreenBatchCount >= 1/u);
+  assert.match(schedule, /requestIdleCallback\(drainPending, \{ timeout: delay \}\)/u);
+});
+
+test("popup listens for status events without polling the page", () => {
+  assert.match(popupSource, /api\.runtime\.onMessage\.addListener\(handleStatusMessage\);/u);
+  assert.doesNotMatch(popupSource, /setInterval\(/u);
+});
+
+test("selection translation is bounded and does not mutate selected page text", () => {
+  const selectionStart = contentSource.indexOf("async function translateSelection(");
+  const selectionEnd = contentSource.indexOf("function showSelectionAction(", selectionStart);
+  const handler = contentSource.slice(selectionStart, selectionEnd);
+  const routeStart = contentSource.indexOf("function checkRouteChange()");
+  const routeEnd = contentSource.indexOf("function handleVisibilityChange()", routeStart);
+  const viewportStart = contentSource.indexOf("function handleViewportMovement()");
+  const viewportEnd = contentSource.indexOf("async function showOriginal()", viewportStart);
+
+  assert.match(contentSource, /const MAX_SELECTION_CHARACTERS = 4000;/u);
+  assert.match(handler, /\.slice\(0, MAX_PROTECTED_TERMS_PER_ITEM\)/u);
+  assert.match(handler, /type: "translateBatch"/u);
+  assert.match(handler, /kind: "text"/u);
+  assert.doesNotMatch(handler, /nodeValue\s*=|textContent\s*=\s*translated/u);
+  assert.match(contentSource, /selectionHost\.attachShadow\(\{ mode: "closed" \}\)/u);
+  assert.match(contentSource.slice(routeStart, routeEnd), /closeSelectionUi\(\);/u);
+  assert.match(contentSource.slice(viewportStart, viewportEnd), /closeSelectionUi\(\);/u);
 });
 
 test("returns authoritative cache statistics without storage byte accounting", async () => {

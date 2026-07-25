@@ -1,0 +1,347 @@
+{
+  "extensionName": {
+    "message": "Smart Page Translator"
+  },
+  "extensionDescription": {
+    "message": "Translates complete web pages with selectable AI providers and a persistent local cache."
+  },
+  "extensionShortName": {
+    "message": "Smart Translator"
+  },
+  "currentPage": {
+    "message": "Current page"
+  },
+  "restrictedPage": {
+    "message": "Restricted page"
+  },
+  "localFile": {
+    "message": "Local file"
+  },
+  "onThisWebsite": {
+    "message": "On this website"
+  },
+  "followLanguageRules": {
+    "message": "Follow language rules"
+  },
+  "alwaysTranslate": {
+    "message": "Always translate"
+  },
+  "neverTranslate": {
+    "message": "Never translate"
+  },
+  "translateInto": {
+    "message": "Translate into"
+  },
+  "ready": {
+    "message": "Ready"
+  },
+  "enableTranslation": {
+    "message": "Enable translation for this website."
+  },
+  "translationStatistics": {
+    "message": "Translation statistics"
+  },
+  "translationDetails": {
+    "message": "Translation details"
+  },
+  "elements": {
+    "message": "elements"
+  },
+  "cacheHits": {
+    "message": "cache hits"
+  },
+  "apiPhrases": {
+    "message": "API phrases"
+  },
+  "translateThisPage": {
+    "message": "Translate this page"
+  },
+  "retryTranslation": {
+    "message": "Retry translation"
+  },
+  "showOriginal": {
+    "message": "Show original"
+  },
+  "showTranslation": {
+    "message": "Show translation"
+  },
+  "settings": {
+    "message": "Settings"
+  },
+  "translationsSavedLocally": {
+    "message": "{count} translations saved locally"
+  },
+  "apiKeyRequired": {
+    "message": "API key required"
+  },
+  "apiKeyRequiredDetails": {
+    "message": "Open Settings and configure a {provider} API key."
+  },
+  "pageUnavailable": {
+    "message": "Page unavailable"
+  },
+  "pageUnavailableDetails": {
+    "message": "The browser does not allow extensions on this page."
+  },
+  "reloadAfterInstall": {
+    "message": "Reload the page after installing the extension."
+  },
+  "translationStopped": {
+    "message": "Translation stopped"
+  },
+  "translationSpreading": {
+    "message": "Translation spreading"
+  },
+  "translationSpreadingDetails": {
+    "message": "{language} text is being processed in parallel."
+  },
+  "pageTranslated": {
+    "message": "Page translated"
+  },
+  "automaticRuleMatched": {
+    "message": "{language} matched your automatic rules."
+  },
+  "manualTranslationActive": {
+    "message": "One-time translation is active for this page."
+  },
+  "siteAlwaysTranslated": {
+    "message": "This website is always translated."
+  },
+  "dynamicContentTranslated": {
+    "message": "Dynamic content stays translated."
+  },
+  "showingOriginal": {
+    "message": "Showing original"
+  },
+  "showingOriginalDetails": {
+    "message": "Translation remains ready and can be restored from the local cache."
+  },
+  "watchingPage": {
+    "message": "Watching this page"
+  },
+  "watchingPageDetails": {
+    "message": "Waiting for translatable text or a response."
+  },
+  "privateTab": {
+    "message": "Private tab"
+  },
+  "privateTabDetails": {
+    "message": "Use one-time translation; page text will not be cached."
+  },
+  "translationDisabled": {
+    "message": "Translation disabled"
+  },
+  "neverTranslateDetails": {
+    "message": "This website is on the never-translate list."
+  },
+  "waitingForRule": {
+    "message": "Waiting for a rule"
+  },
+  "waitingForRuleDetails": {
+    "message": "{language} is not selected for automatic translation."
+  },
+  "pageLanguage": {
+    "message": "the page language"
+  },
+  "couldNotUpdateWebsite": {
+    "message": "Could not update website"
+  },
+  "couldNotChangeLanguage": {
+    "message": "Could not change language"
+  },
+  "extensionError": {
+    "message": "Extension error"
+  },
+  "contextTranslateSelection": {
+    "message": "Translate selection"
+  },
+  "translateSelection": {
+    "message": "Translate"
+  },
+  "selectionTranslating": {
+    "message": "Translating selection…"
+  },
+  "selectionOriginal": {
+    "message": "Original"
+  },
+  "selectionTranslation": {
+    "message": "Translation"
+  },
+  "selectionTooLong": {
+    "message": "Select no more than 4,000 characters."
+  },
+  "close": {
+    "message": "Close"
+  },
+  "detectAutomatically": {
+    "message": "Detect automatically"
+  },
+  "settingsTitle": {
+    "message": "Smart Page Translator Settings"
+  },
+  "webExtensions": {
+    "message": "WebExtensions"
+  },
+  "heroSubtitle": {
+    "message": "Accurate whole-page translation with persistent local caching."
+  },
+  "translationProvider": {
+    "message": "Translation provider"
+  },
+  "providerDescription": {
+    "message": "Choose a provider, store its key locally, then load the models available to your account."
+  },
+  "checking": {
+    "message": "Checking"
+  },
+  "provider": {
+    "message": "Provider"
+  },
+  "model": {
+    "message": "Model"
+  },
+  "apiKey": {
+    "message": "API key"
+  },
+  "apiKeyPlaceholder": {
+    "message": "Leave blank to keep the current key"
+  },
+  "apiKeyHint": {
+    "message": "The key is stored only in local extension storage and is never displayed again."
+  },
+  "loadModels": {
+    "message": "Load models"
+  },
+  "testConnection": {
+    "message": "Test connection"
+  },
+  "removeKey": {
+    "message": "Remove key"
+  },
+  "translation": {
+    "message": "Translation"
+  },
+  "translationDescription": {
+    "message": "The selected provider and model apply to every translated website."
+  },
+  "sourceLanguage": {
+    "message": "Source language"
+  },
+  "targetLanguage": {
+    "message": "Target language"
+  },
+  "automaticTranslation": {
+    "message": "Automatic translation"
+  },
+  "automaticDescription": {
+    "message": "Choose source languages and exact websites that should translate without another click."
+  },
+  "localRules": {
+    "message": "Local rules"
+  },
+  "translateLanguagesAutomatically": {
+    "message": "Translate these languages automatically"
+  },
+  "languageDetectionPrivacy": {
+    "message": "Detection runs locally in the browser. Page text is sent to the selected provider only after a rule matches."
+  },
+  "alwaysTranslateWebsites": {
+    "message": "Always translate websites"
+  },
+  "alwaysSitesPlaceholder": {
+    "message": "shop.example.com\nhttps://news.example.org"
+  },
+  "alwaysSitesHint": {
+    "message": "One domain or origin per line. All paths on that origin are included."
+  },
+  "neverTranslateWebsites": {
+    "message": "Never translate websites"
+  },
+  "neverSitesPlaceholder": {
+    "message": "bank.example.com"
+  },
+  "neverSitesHint": {
+    "message": "These rules override automatic language detection."
+  },
+  "textShimmer": {
+    "message": "Text shimmer"
+  },
+  "textShimmerHint": {
+    "message": "Briefly highlight only text that is being translated."
+  },
+  "protectedTerms": {
+    "message": "Protected names and terms"
+  },
+  "protectedTermsDescription": {
+    "message": "Keep selected brands, people, product lines, and model names unchanged."
+  },
+  "protectedTermsPlaceholder": {
+    "message": "Apple\nAirPods Pro\nJane Doe"
+  },
+  "protectedTermsHint": {
+    "message": "One exact term per line. Matching is case-insensitive."
+  },
+  "localCache": {
+    "message": "Local cache"
+  },
+  "localCacheDescription": {
+    "message": "Identical phrases are reused without another API request."
+  },
+  "maximumCachedPhrases": {
+    "message": "Maximum cached phrases"
+  },
+  "cacheLimitHint": {
+    "message": "Default: 8,000 phrases. Hard limits: 20,000 phrases and 16 MiB."
+  },
+  "clearTranslationCache": {
+    "message": "Clear translation cache"
+  },
+  "privacyNote": {
+    "message": "Privacy note"
+  },
+  "privacyDescription": {
+    "message": "When you enable a website, its non-editable text is sent to the selected provider for translation. Form values and editable text are deliberately skipped."
+  },
+  "saveSettings": {
+    "message": "Save settings"
+  },
+  "keyConfigured": {
+    "message": "{provider} key configured"
+  },
+  "keyMissing": {
+    "message": "{provider} key missing"
+  },
+  "keyStoredHint": {
+    "message": "The {provider} key is stored locally. Enter a replacement only when you want to rotate it."
+  },
+  "keyEntryHint": {
+    "message": "Enter a {provider} API key, then load the models available to this account."
+  },
+  "saving": {
+    "message": "Saving…"
+  },
+  "settingsSaved": {
+    "message": "Settings saved."
+  },
+  "loading": {
+    "message": "Loading…"
+  },
+  "modelsLoaded": {
+    "message": "{count} compatible {provider} models loaded."
+  },
+  "testing": {
+    "message": "Testing…"
+  },
+  "connectionWorks": {
+    "message": "{provider} connection works. {model} is available."
+  },
+  "keyRemoved": {
+    "message": "{provider} API key removed."
+  },
+  "cacheCleared": {
+    "message": "Translation cache cleared."
+  },
+  "cacheCount": {
+    "message": "{count} phrases · {used} / {maximum}"
+  }
+}

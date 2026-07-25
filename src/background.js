@@ -32,6 +32,7 @@
   const LEGACY_DEEPSEEK_KEY = "deepseekApiKeyV1";
   const CACHE_KEY = "translationCacheV1";
   const CACHE_ENTRY_PREFIX = "translationCacheEntryV1:";
+  const CONTEXT_MENU_ID = "translate-selection";
   const DEFAULT_SETTINGS = Object.freeze({
     animationEnabled: true,
     autoTranslateLanguages: [],
@@ -41,6 +42,7 @@
       deepseek: PROVIDERS.deepseek.defaultModel,
       openai: PROVIDERS.openai.defaultModel
     }),
+    protectedTerms: [],
     siteRules: {},
     sourceLanguage: "auto",
     targetLanguage: "ru"
@@ -49,6 +51,7 @@
   const MAX_BATCH_TRANSLATION_CHARACTERS = 40000;
   const MAX_BATCH_ITEMS = 48;
   const MAX_CONTEXT_CHARACTERS = 400;
+  const MAX_CUSTOM_PROTECTED_TERMS = 256;
   const FOCUSED_RETRY_BATCH_SIZE = 8;
   const MAX_CACHE_ENTRIES = 20000;
   const MAX_CONCURRENT_REQUESTS = 3;
@@ -212,6 +215,30 @@
       .filter((language) => language && language !== "auto"))].slice(0, 30);
   }
 
+  function normalizeProtectedTerms(value) {
+    const terms = Array.isArray(value) ? value : [];
+    const normalized = new Map();
+
+    for (const value of terms) {
+      const term = normalizeText(value);
+      const key = term.toLowerCase();
+
+      if (term.length < 2
+        || term.length > MAX_PROTECTED_TERM_CHARACTERS
+        || normalized.has(key)) {
+        continue;
+      }
+
+      normalized.set(key, term);
+
+      if (normalized.size >= MAX_CUSTOM_PROTECTED_TERMS) {
+        break;
+      }
+    }
+
+    return [...normalized.values()];
+  }
+
   function normalizeSiteRules(value, legacyEnabledSites) {
     const siteRules = {};
 
@@ -251,6 +278,7 @@
       ),
       provider,
       providerModels,
+      protectedTerms: normalizeProtectedTerms(value?.protectedTerms),
       siteRules: normalizeSiteRules(value?.siteRules, value?.enabledSites),
       sourceLanguage: normalizeLanguage(value?.sourceLanguage, DEFAULT_SETTINGS.sourceLanguage),
       targetLanguage: normalizeLanguage(value?.targetLanguage, DEFAULT_SETTINGS.targetLanguage)
@@ -1095,6 +1123,7 @@
         model: getSelectedModel(settings),
         provider: settings.provider,
         providerModels: settings.providerModels,
+        protectedTerms: settings.protectedTerms,
         siteRules: settings.siteRules,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage
@@ -1124,6 +1153,7 @@
         autoTranslateLanguages: settings.autoTranslateLanguages,
         model: getSelectedModel(settings),
         provider: settings.provider,
+        protectedTerms: settings.protectedTerms,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage
       }
@@ -1153,6 +1183,10 @@
       settings.providerModels = patch.providerModels;
     } else if (patch && Object.hasOwn(patch, "model")) {
       settings.providerModels[settings.provider] = patch.model;
+    }
+
+    if (patch && Object.hasOwn(patch, "protectedTerms")) {
+      settings.protectedTerms = patch.protectedTerms;
     }
 
     if (patch && Object.hasOwn(patch, "siteRules")) {
@@ -1347,6 +1381,20 @@
     return { cancelled: requests.length };
   }
 
+  async function registerContextMenu() {
+    try {
+      await api.contextMenus.remove(CONTEXT_MENU_ID);
+    } catch {
+      // The menu is absent on a fresh installation.
+    }
+
+    api.contextMenus.create({
+      contexts: ["selection"],
+      id: CONTEXT_MENU_ID,
+      title: api.i18n.getMessage("contextTranslateSelection") || "Translate selection"
+    });
+  }
+
   api.runtime.onInstalled.addListener(async () => {
     await storageAccessPromise;
     const stored = await api.storage.local.get(SETTINGS_KEY);
@@ -1354,6 +1402,26 @@
     if (!stored[SETTINGS_KEY]) {
       await saveSettings(DEFAULT_SETTINGS);
     }
+
+    await registerContextMenu();
+  });
+
+  api.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId !== CONTEXT_MENU_ID
+      || info.editable === true
+      || tab?.id == null
+      || typeof info.selectionText !== "string") {
+      return;
+    }
+
+    void api.tabs.sendMessage(
+      tab.id,
+      {
+        type: "translateSelection",
+        text: info.selectionText
+      },
+      { frameId: info.frameId ?? 0 }
+    ).catch(() => undefined);
   });
 
   function handleMessage(message, sender) {

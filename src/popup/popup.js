@@ -1,9 +1,16 @@
 (function initializePopup() {
   const api = globalThis.browser;
+  const {
+    fillLanguageSelect,
+    getLanguageName,
+    localizeDocument,
+    t
+  } = globalThis.SmartTranslationUiI18n;
+  localizeDocument();
   const elements = {
     apiItemCount: document.querySelector("#apiItemCount"),
-    cacheEntries: document.querySelector("#cacheEntries"),
     cacheHitCount: document.querySelector("#cacheHitCount"),
+    cacheSummary: document.querySelector("#cacheSummary"),
     settingsButton: document.querySelector("#settingsButton"),
     siteLabel: document.querySelector("#siteLabel"),
     siteMode: document.querySelector("#siteMode"),
@@ -12,25 +19,16 @@
     statusTitle: document.querySelector("#statusTitle"),
     targetLanguage: document.querySelector("#targetLanguage"),
     translateButton: document.querySelector("#translateButton"),
-    translatedCount: document.querySelector("#translatedCount")
+    translatedCount: document.querySelector("#translatedCount"),
+    viewButton: document.querySelector("#viewButton")
   };
+  fillLanguageSelect(elements.targetLanguage);
   let activeTab;
+  let currentStatus;
   let site = "";
   let privateTab = false;
   let apiConfigured = true;
   let providerLabel = "DeepSeek";
-  const languageNames = {
-    de: "German",
-    en: "English",
-    es: "Spanish",
-    fr: "French",
-    it: "Italian",
-    nl: "Dutch",
-    pl: "Polish",
-    pt: "Portuguese",
-    ru: "Russian",
-    uk: "Ukrainian"
-  };
 
   function getSite(url) {
     try {
@@ -48,44 +46,128 @@
     document.body.dataset.tone = tone;
   }
 
+  function updateCacheSummary(value) {
+    elements.cacheSummary.textContent = t(
+      "translationsSavedLocally",
+      { count: Number(value) || 0 },
+      `${Number(value) || 0} translations saved locally`
+    );
+  }
+
+  function updateActions(status) {
+    const translatedView = status?.viewMode !== "original";
+    const canToggleView = Boolean(status?.enabled)
+      && (status?.translatedElements > 0 || !translatedView);
+    elements.viewButton.hidden = !canToggleView;
+    elements.viewButton.textContent = translatedView
+      ? t("showOriginal", null, "Show original")
+      : t("showTranslation", null, "Show translation");
+    elements.translateButton.hidden = Boolean(status?.enabled && !status?.error);
+    elements.translateButton.disabled = !site || !apiConfigured;
+    elements.translateButton.textContent = status?.error
+      ? t("retryTranslation", null, "Retry translation")
+      : t("translateThisPage", null, "Translate this page");
+  }
+
   function renderPageStatus(status) {
+    currentStatus = status || null;
+    elements.translatedCount.textContent = String(status?.translatedElements || 0);
+    elements.cacheHitCount.textContent = String(status?.cacheHits || 0);
+    elements.apiItemCount.textContent = String(status?.apiItems || 0);
+
+    if (Number.isFinite(status?.cacheEntries)) {
+      updateCacheSummary(status.cacheEntries);
+    }
+
+    updateActions(status);
+
     if (!apiConfigured) {
-      showStatus("API key required", `Open Settings and configure a ${providerLabel} API key.`, "error");
+      showStatus(
+        t("apiKeyRequired", null, "API key required"),
+        t(
+          "apiKeyRequiredDetails",
+          { provider: providerLabel },
+          `Open Settings and configure a ${providerLabel} API key.`
+        ),
+        "error"
+      );
       return;
     }
 
     if (!status) {
-      showStatus("Page unavailable", "The browser does not allow extensions on this page.", "error");
+      showStatus(
+        t("pageUnavailable", null, "Page unavailable"),
+        t("pageUnavailableDetails", null, "The browser does not allow extensions on this page."),
+        "error"
+      );
       return;
     }
 
-    elements.translatedCount.textContent = String(status.translatedElements || 0);
-    elements.cacheHitCount.textContent = String(status.cacheHits || 0);
-    elements.apiItemCount.textContent = String(status.apiItems || 0);
+    const language = status.detectedLanguage
+      ? getLanguageName(status.detectedLanguage)
+      : t("pageLanguage", null, "the page language");
 
-    elements.translateButton.disabled = !site;
-    elements.translateButton.textContent = status.enabled ? "Scan page again" : "Translate this page";
-    const language = languageNames[status.detectedLanguage] || status.detectedLanguage || "the page language";
-
-    if (status.error) {
-      showStatus("Translation stopped", status.error, "error");
+    if (status.viewMode === "original") {
+      showStatus(
+        t("showingOriginal", null, "Showing original"),
+        t(
+          "showingOriginalDetails",
+          null,
+          "Translation remains ready and can be restored from the local cache."
+        ),
+        "idle"
+      );
+    } else if (status.error) {
+      showStatus(t("translationStopped", null, "Translation stopped"), status.error, "error");
     } else if (status.translating) {
-      showStatus("Translation spreading", `${language} text is being processed in parallel.`, "working");
+      showStatus(
+        t("translationSpreading", null, "Translation spreading"),
+        t(
+          "translationSpreadingDetails",
+          { language },
+          `${language} text is being processed in parallel.`
+        ),
+        "working"
+      );
     } else if (status.enabled && status.translatedElements > 0) {
       const rule = status.activation === "language"
-        ? `${language} matched your automatic rules.`
+        ? t("automaticRuleMatched", { language }, `${language} matched your automatic rules.`)
         : status.activation === "manual"
-          ? "One-time translation is active for this page."
-          : "This website is always translated.";
-      showStatus("Page translated", `${rule} Dynamic content stays translated.`, "success");
+          ? t("manualTranslationActive", null, "One-time translation is active for this page.")
+          : t("siteAlwaysTranslated", null, "This website is always translated.");
+      showStatus(
+        t("pageTranslated", null, "Page translated"),
+        `${rule} ${t("dynamicContentTranslated", null, "Dynamic content stays translated.")}`,
+        "success"
+      );
     } else if (status.enabled) {
-      showStatus("Watching this page", "Waiting for translatable text or a response.", "working");
+      showStatus(
+        t("watchingPage", null, "Watching this page"),
+        t("watchingPageDetails", null, "Waiting for translatable text or a response."),
+        "working"
+      );
     } else if (privateTab) {
-      showStatus("Private tab", "Use one-time translation; page text will not be cached.", "idle");
+      showStatus(
+        t("privateTab", null, "Private tab"),
+        t("privateTabDetails", null, "Use one-time translation; page text will not be cached."),
+        "idle"
+      );
     } else if (status.siteMode === "never") {
-      showStatus("Translation disabled", "This website is on the never-translate list.", "idle");
+      showStatus(
+        t("translationDisabled", null, "Translation disabled"),
+        t("neverTranslateDetails", null, "This website is on the never-translate list."),
+        "idle"
+      );
     } else {
-      showStatus("Waiting for a rule", `${language} is not selected for automatic translation.`, "idle");
+      showStatus(
+        t("waitingForRule", null, "Waiting for a rule"),
+        t(
+          "waitingForRuleDetails",
+          { language },
+          `${language} is not selected for automatic translation.`
+        ),
+        "idle"
+      );
     }
   }
 
@@ -109,7 +191,7 @@
     renderPageStatus(status);
 
     if (Number.isFinite(cache?.cacheEntries)) {
-      elements.cacheEntries.textContent = String(cache.cacheEntries);
+      updateCacheSummary(cache.cacheEntries);
     }
   }
 
@@ -118,7 +200,9 @@
     activeTab = tabs[0];
     site = getSite(activeTab?.url);
     privateTab = activeTab?.incognito === true;
-    elements.siteLabel.textContent = site ? new URL(site).hostname || "Local file" : "Restricted page";
+    elements.siteLabel.textContent = site
+      ? new URL(site).hostname || t("localFile", null, "Local file")
+      : t("restrictedPage", null, "Restricted page");
     elements.siteMode.disabled = !site || privateTab;
     elements.translateButton.disabled = !site;
 
@@ -127,7 +211,7 @@
     providerLabel = response.providers?.[response.settings.provider]?.label || response.settings.provider;
     elements.siteMode.value = response.siteMode || "auto";
     elements.targetLanguage.value = response.settings.targetLanguage;
-    elements.cacheEntries.textContent = String(response.cacheEntries || 0);
+    updateCacheSummary(response.cacheEntries);
 
     await refreshStatus();
   }
@@ -148,7 +232,11 @@
       });
       await refreshStatus();
     } catch (error) {
-      showStatus("Could not update website", String(error?.message || error), "error");
+      showStatus(
+        t("couldNotUpdateWebsite", null, "Could not update website"),
+        String(error?.message || error),
+        "error"
+      );
       await initialize().catch(() => undefined);
     } finally {
       elements.siteMode.disabled = !site || privateTab;
@@ -164,7 +252,11 @@
       });
       await refreshStatus();
     } catch (error) {
-      showStatus("Could not change language", String(error?.message || error), "error");
+      showStatus(
+        t("couldNotChangeLanguage", null, "Could not change language"),
+        String(error?.message || error),
+        "error"
+      );
     }
   });
 
@@ -173,15 +265,46 @@
       const status = await api.tabs.sendMessage(activeTab.id, { type: "translateNow" }, { frameId: 0 });
       renderPageStatus(status);
     } catch {
-      showStatus("Page unavailable", "Reload the page after installing the extension.", "error");
+      showStatus(
+        t("pageUnavailable", null, "Page unavailable"),
+        t("reloadAfterInstall", null, "Reload the page after installing the extension."),
+        "error"
+      );
+    }
+  });
+
+  elements.viewButton.addEventListener("click", async () => {
+    try {
+      const type = currentStatus?.viewMode === "original" ? "showTranslation" : "showOriginal";
+      const status = await api.tabs.sendMessage(activeTab.id, { type }, { frameId: 0 });
+      renderPageStatus(status);
+    } catch {
+      showStatus(
+        t("pageUnavailable", null, "Page unavailable"),
+        t("reloadAfterInstall", null, "Reload the page after installing the extension."),
+        "error"
+      );
     }
   });
 
   elements.settingsButton.addEventListener("click", () => api.runtime.openOptionsPage());
 
-  initialize().catch((error) => {
-    showStatus("Extension error", String(error?.message || error), "error");
-  });
+  function handleStatusMessage(message, sender) {
+    if (message?.type === "translationStatus"
+      && sender.tab?.id === activeTab?.id
+      && sender.frameId === 0) {
+      renderPageStatus(message.status);
+    }
+  }
 
-  setInterval(refreshStatus, 800);
+  api.runtime.onMessage.addListener(handleStatusMessage);
+  window.addEventListener("unload", () => api.runtime.onMessage.removeListener(handleStatusMessage), { once: true });
+
+  initialize().catch((error) => {
+    showStatus(
+      t("extensionError", null, "Extension error"),
+      String(error?.message || error),
+      "error"
+    );
+  });
 })();

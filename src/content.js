@@ -1,5 +1,6 @@
 (function initializeContentScript() {
   const api = globalThis.browser;
+  const { t } = globalThis.SmartTranslationUiI18n;
   const {
     addPageLanguageContext,
     findClosestTextKindElement,
@@ -10,6 +11,7 @@
     getTranslatableAttributes,
     isBlockedAttributeElement,
     isBlockedElement,
+    isEditableElement,
     isLikelyPersonalName,
     normalizeLanguageCode,
     normalizeText,
@@ -34,6 +36,8 @@
   const MAX_PENDING_SCAN_ROOTS = 256;
   const MAX_PENDING_TARGETS = 5000;
   const MAX_PARALLEL_BATCHES = 2;
+  const MAX_PROTECTED_TERMS_PER_ITEM = 20;
+  const MAX_SELECTION_CHARACTERS = 4000;
   const MAX_TEXT_SEGMENT_CHARACTERS = 8000;
   const MAX_ANIMATED_TEXT_RECTS = 12;
   const MIN_TRANSLATION_MOTION_MS = 720;
@@ -41,6 +45,7 @@
   const MAX_RESTORE_ITEMS_PER_SLICE = 160;
   const CLEANUP_DELAY = 800;
   const QUEUE_BACKOFF_MS = 1500;
+  const OFFSCREEN_BATCH_DELAY = 160;
   const RECOVERY_SCAN_DELAY = 320;
   const SCAN_DELAY = 48;
   const SCAN_TIME_BUDGET_MS = 8;
@@ -66,6 +71,7 @@
   let queuedAttributes = new WeakMap();
   let activeBatchCount = 0;
   let activeBrandScanCount = 0;
+  let activeOffscreenBatchCount = 0;
   let activeMotionElementCount = 0;
   let cleanupJob;
   let cleanupRequested = false;
@@ -76,6 +82,8 @@
   let documentScanInProgress = false;
   let documentScanTimer;
   let flushTimer;
+  let flushIdleHandle;
+  let flushScheduledForOffscreen = false;
   let motionHost;
   let motionRoot;
   let motionRequestSequence = 0;
@@ -92,6 +100,9 @@
   let routeRescanPending = false;
   let routeScanTimer;
   let scanTimer;
+  let selectionHost;
+  let selectionRequestRevision = 0;
+  let selectionRoot;
   let subtreeScanTimer;
   let translationCancellationPromise = Promise.resolve();
   let visibilityElementLookup = new WeakMap();
@@ -107,12 +118,18 @@
     error: "",
     model: "deepseek-v4-flash",
     provider: "deepseek",
+    protectedTerms: [],
     siteMode: "auto",
     sourceLanguage: "auto",
     targetLanguage: "ru",
     translatedElements: 0,
-    translating: false
+    translating: false,
+    viewMode: "translated"
   };
+
+  function isTranslationViewActive() {
+    return state.enabled && state.viewMode === "translated" && !state.error && !restoreJob;
+  }
 
   const observer = new MutationObserver((mutations) => {
     let removedContent = false;
@@ -197,11 +214,13 @@
       error: state.error,
       model: state.model,
       provider: state.provider,
+      protectedTerms: state.protectedTerms.length,
       site,
       siteMode: state.siteMode,
       trackedReferences: trackedTextRefs.size + trackedAttributeRecords.size + observedRootRefs.size,
       translatedElements: state.translatedElements,
-      translating: state.translating
+      translating: state.translating,
+      viewMode: state.viewMode
     };
   }
 
@@ -235,7 +254,7 @@
   }
 
   function resumeObserver() {
-    if (!state.enabled || state.error || restoreJob) {
+    if (!isTranslationViewActive()) {
       return;
     }
 
@@ -392,6 +411,18 @@
     }
   }
 
+  function getProtectedTermSets() {
+    const terms = new Set(brandTerms);
+    const wholeTerms = new Set(wholeBrandTerms);
+
+    for (const term of state.protectedTerms) {
+      terms.add(term);
+      wholeTerms.add(term);
+    }
+
+    return { terms, wholeTerms };
+  }
+
   function collectBrandNode(node) {
     const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     const brandElement = findClosestTextKindElement(element, "brand-name");
@@ -503,7 +534,7 @@
   }
 
   function collectTextNode(node) {
-    if (!state.enabled || state.error || !node?.parentElement || isBlockedElement(node.parentElement)) {
+    if (!isTranslationViewActive() || !node?.parentElement || isBlockedElement(node.parentElement)) {
       return;
     }
 
@@ -591,7 +622,7 @@
   }
 
   function collectAttribute(element, attribute) {
-    if (!state.enabled || state.error || !element.hasAttribute(attribute) || isBlockedAttributeElement(element)) {
+    if (!isTranslationViewActive() || !element.hasAttribute(attribute) || isBlockedAttributeElement(element)) {
       return;
     }
 
@@ -691,7 +722,7 @@
       documentScanInProgress = false;
       scheduleFlush();
 
-      if (documentRescanRequested && state.enabled && !state.error) {
+      if (documentRescanRequested && isTranslationViewActive()) {
         documentRescanRequested = false;
         documentScanTimer = setTimeout(() => {
           documentScanTimer = undefined;
@@ -701,7 +732,7 @@
     };
 
     const scanSlice = () => {
-      if (!state.enabled || state.error || scanRevision !== revision) {
+      if (!isTranslationViewActive() || scanRevision !== revision) {
         finish();
         return;
       }
@@ -755,7 +786,7 @@
   }
 
   function scanSubtree(root) {
-    if (!state.enabled || state.error || restoreJob || !root) {
+    if (!isTranslationViewActive() || !root) {
       return;
     }
 
@@ -828,8 +859,7 @@
       const job = subtreeScanJobs[0];
       const root = job.reference.deref();
 
-      if (!state.enabled
-        || state.error
+      if (!isTranslationViewActive()
         || job.revision !== revision
         || !root
         || (!root.isConnected && !root.host?.isConnected)) {
@@ -914,7 +944,7 @@
   }
 
   function scheduleScan(root) {
-    if (!state.enabled || state.error || restoreJob || !root) {
+    if (!isTranslationViewActive() || !root) {
       return;
     }
 
@@ -958,13 +988,17 @@
       }
 
       needsFullRescan = false;
-      scanSubtree(document);
+
+      if (isTranslationViewActive()) {
+        scanSubtree(document);
+      }
     }, RECOVERY_SCAN_DELAY);
   }
 
-  function takeBatch() {
+  function takeBatch(visibleOnly = false) {
     const selected = [];
     let characters = 0;
+    const { terms, wholeTerms } = getProtectedTermSets();
 
     const takeSegment = (key, segment) => {
       const segmentCharacters = segment.text.length + segment.context.length;
@@ -977,10 +1011,10 @@
 
       segment.protectedTerms = selectProtectedTerms(
         segment.text,
-        brandTerms,
+        terms,
         segment.kind,
-        wholeBrandTerms
-      );
+        wholeTerms
+      ).slice(0, MAX_PROTECTED_TERMS_PER_ITEM);
       pendingSegments.delete(key);
       visiblePendingCounts.delete(segment);
       pendingTargetCount = Math.max(0, pendingTargetCount - segment.targets.length);
@@ -1002,7 +1036,15 @@
       }
     }
 
+    if (visibleOnly) {
+      return selected;
+    }
+
     for (const [key, segment] of pendingSegments) {
+      if (visiblePendingCounts.has(segment)) {
+        continue;
+      }
+
       if (!takeSegment(key, segment)) {
         break;
       }
@@ -1567,7 +1609,7 @@
 
     return {
       start() {
-        if (!started && !finished && state.enabled && !state.error && batchRevision === revision) {
+        if (!started && !finished && isTranslationViewActive() && batchRevision === revision) {
           started = true;
           startedAt = performance.now();
           elements = startTranslationMotion(batch);
@@ -1625,7 +1667,7 @@
     let targetIndex = 0;
 
     while (segmentIndex < batch.length) {
-      if (!state.enabled || state.error || batchRevision !== revision) {
+      if (!isTranslationViewActive() || batchRevision !== revision) {
         return { applied, cancelled: true };
       }
 
@@ -1679,13 +1721,14 @@
     return { applied, cancelled: false };
   }
 
-  async function processBatch(batch) {
+  async function processBatch(batch, offscreen = false) {
     const batchRevision = revision;
     motionRequestSequence += 1;
     const motionId = `${revision}:${motionRequestSequence}`;
     const motion = createTranslationMotion(batch, batchRevision);
     pendingTranslationMotions.set(motionId, motion);
     activeBatchCount += 1;
+    activeOffscreenBatchCount += offscreen ? 1 : 0;
     state.translating = true;
     state.error = "";
 
@@ -1694,7 +1737,7 @@
     try {
       await translationCancellationPromise;
 
-      if (!state.enabled || state.error || batchRevision !== revision) {
+      if (!isTranslationViewActive() || batchRevision !== revision) {
         return;
       }
 
@@ -1715,7 +1758,7 @@
       });
       motion.finish();
 
-      if (!state.enabled || state.error || batchRevision !== revision) {
+      if (!isTranslationViewActive() || batchRevision !== revision) {
         return;
       }
 
@@ -1754,12 +1797,13 @@
       await releaseBatchTargets(batch);
 
       activeBatchCount = Math.max(0, activeBatchCount - 1);
-      state.translating = state.enabled && activeBatchCount > 0;
+      activeOffscreenBatchCount = Math.max(0, activeOffscreenBatchCount - (offscreen ? 1 : 0));
+      state.translating = isTranslationViewActive() && activeBatchCount > 0;
       reportStatus();
 
-      if (state.enabled && pendingSegments.size > 0 && !state.error) {
+      if (isTranslationViewActive() && pendingSegments.size > 0) {
         scheduleFlush();
-      } else if (state.enabled && !state.error && activeBatchCount === 0 && needsFullRescan) {
+      } else if (isTranslationViewActive() && activeBatchCount === 0 && needsFullRescan) {
         scheduleRecoveryScan();
       }
     }
@@ -1767,34 +1811,91 @@
 
   function drainPending() {
     flushTimer = undefined;
+    flushIdleHandle = undefined;
+    flushScheduledForOffscreen = false;
 
     if (activeBrandScanCount > 0) {
       return;
     }
 
-    while (state.enabled && !state.error && activeBatchCount < MAX_PARALLEL_BATCHES && pendingSegments.size > 0) {
-      const batch = takeBatch();
+    while (isTranslationViewActive()
+      && activeBatchCount < MAX_PARALLEL_BATCHES
+      && pendingSegments.size > 0) {
+      let batch = takeBatch(true);
+      let offscreen = false;
+
+      if (batch.length === 0) {
+        if (activeOffscreenBatchCount >= 1) {
+          break;
+        }
+
+        batch = takeBatch();
+        offscreen = true;
+      }
 
       if (batch.length === 0) {
         break;
       }
 
-      void processBatch(batch);
+      void processBatch(batch, offscreen);
     }
   }
 
+  function cancelScheduledFlush() {
+    clearTimeout(flushTimer);
+    flushTimer = undefined;
+
+    if (flushIdleHandle !== undefined && typeof cancelIdleCallback === "function") {
+      cancelIdleCallback(flushIdleHandle);
+    }
+
+    flushIdleHandle = undefined;
+    flushScheduledForOffscreen = false;
+  }
+
   function scheduleFlush() {
-    if (!state.enabled
-      || state.error
-      || restoreJob
+    if (!isTranslationViewActive()
       || activeBrandScanCount > 0
       || activeBatchCount >= MAX_PARALLEL_BATCHES
-      || pendingSegments.size === 0
-      || flushTimer) {
+      || pendingSegments.size === 0) {
       return;
     }
 
-    flushTimer = setTimeout(drainPending, Math.max(24, queueBackoffUntil - Date.now()));
+    const queueDelay = Math.max(0, queueBackoffUntil - Date.now());
+
+    if (visiblePendingCounts.size > 0) {
+      if (flushTimer) {
+        if (!flushScheduledForOffscreen) {
+          return;
+        }
+
+        clearTimeout(flushTimer);
+        flushTimer = undefined;
+        flushScheduledForOffscreen = false;
+      }
+
+      if (flushIdleHandle !== undefined && typeof cancelIdleCallback === "function") {
+        cancelIdleCallback(flushIdleHandle);
+        flushIdleHandle = undefined;
+      }
+
+      flushScheduledForOffscreen = false;
+      flushTimer = setTimeout(drainPending, Math.max(24, queueDelay));
+      return;
+    }
+
+    if (activeOffscreenBatchCount >= 1 || flushTimer || flushIdleHandle !== undefined) {
+      return;
+    }
+
+    const delay = Math.max(OFFSCREEN_BATCH_DELAY, queueDelay);
+
+    if (typeof requestIdleCallback === "function") {
+      flushIdleHandle = requestIdleCallback(drainPending, { timeout: delay });
+    } else {
+      flushScheduledForOffscreen = true;
+      flushTimer = setTimeout(drainPending, delay);
+    }
   }
 
   function cancelActiveTranslations() {
@@ -1825,7 +1926,7 @@
     clearTimeout(cleanupTimer);
     clearTimeout(scanTimer);
     clearTimeout(subtreeScanTimer);
-    clearTimeout(flushTimer);
+    cancelScheduledFlush();
     clearTimeout(recoveryScanTimer);
     clearTimeout(routePolicyTimer);
     clearTimeout(routeScanTimer);
@@ -1835,7 +1936,6 @@
     cleanupTimer = undefined;
     scanTimer = undefined;
     subtreeScanTimer = undefined;
-    flushTimer = undefined;
     recoveryScanTimer = undefined;
     routePolicyTimer = undefined;
     routeScanTimer = undefined;
@@ -2041,7 +2141,7 @@
 
     routeRescanPending = false;
 
-    if (startedTranslation === false && state.enabled && !state.error) {
+    if (startedTranslation === false && isTranslationViewActive()) {
       scanSubtree(document);
     }
   }
@@ -2063,12 +2163,14 @@
       enabled: Boolean(enabled),
       model: String(settings?.model || settings?.providerModels?.[provider] || state.model),
       provider,
+      protectedTerms: Array.isArray(settings?.protectedTerms) ? settings.protectedTerms : [],
       siteMode,
       sourceLanguage: String(settings?.sourceLanguage || state.sourceLanguage),
       targetLanguage: String(settings?.targetLanguage || state.targetLanguage)
     };
     const translationChanged = next.model !== state.model
       || next.provider !== state.provider
+      || next.protectedTerms.join("\u0000") !== state.protectedTerms.join("\u0000")
       || next.sourceLanguage !== state.sourceLanguage
       || next.targetLanguage !== state.targetLanguage;
     const wasEnabled = state.enabled;
@@ -2093,9 +2195,15 @@
     state.enabled = next.enabled;
     state.model = next.model;
     state.provider = next.provider;
+    state.protectedTerms = next.protectedTerms;
     state.siteMode = next.siteMode;
     state.sourceLanguage = next.sourceLanguage;
     state.targetLanguage = next.targetLanguage;
+
+    if (!next.enabled) {
+      state.viewMode = "translated";
+    }
+
     const startTranslation = shouldStartTranslation({
       enabled: next.enabled,
       error: state.error,
@@ -2109,13 +2217,13 @@
 
     updateRouteMonitoring();
 
-    if (state.enabled && !state.error) {
+    if (isTranslationViewActive()) {
       resumeObserver();
     } else {
       pauseObserver();
     }
 
-    if (startTranslation) {
+    if (startTranslation && state.viewMode === "translated") {
       scanSubtree(document);
     }
 
@@ -2193,6 +2301,7 @@
     currentUrl = location.href;
     policyRevision += 1;
     revision += 1;
+    closeSelectionUi();
     clearPending();
     routeRescanPending = true;
     brandTerms.clear();
@@ -2208,7 +2317,7 @@
         routePolicyTimer = undefined;
         void applyPolicy(currentSettings, state.siteMode).then(finishRouteRescan);
       }, 380);
-    } else if (state.enabled) {
+    } else if (isTranslationViewActive()) {
       resumeObserver();
       routeScanTimer = setTimeout(() => {
         routeScanTimer = undefined;
@@ -2232,14 +2341,345 @@
 
     checkRouteChange();
 
-    if (state.enabled && !state.error) {
+    if (isTranslationViewActive()) {
       scheduleScan(document);
     }
   }
 
   function handleViewportMovement() {
+    closeSelectionUi();
+
     if (activeMotionElementCount > 0) {
       removeMotion();
+    }
+  }
+
+  async function showOriginal() {
+    if (!state.enabled || state.viewMode === "original") {
+      return publicStatus();
+    }
+
+    state.viewMode = "original";
+    await restorePage();
+    updateRouteMonitoring();
+    reportStatus();
+    return publicStatus();
+  }
+
+  async function showTranslation() {
+    if (restoreJob) {
+      await restoreJob.promise;
+    }
+
+    if (!state.enabled || state.viewMode === "translated") {
+      return publicStatus();
+    }
+
+    state.viewMode = "translated";
+    state.error = "";
+    updateRouteMonitoring();
+    resumeObserver();
+    scanSubtree(document);
+    reportStatus();
+    return publicStatus();
+  }
+
+  function destroySelectionUi() {
+    selectionHost?.remove();
+    selectionHost = undefined;
+    selectionRoot = undefined;
+  }
+
+  function closeSelectionUi() {
+    selectionRequestRevision += 1;
+    destroySelectionUi();
+  }
+
+  function ensureSelectionRoot() {
+    if (selectionHost?.isConnected && selectionRoot) {
+      return selectionRoot;
+    }
+
+    selectionHost = document.createElement("div");
+    selectionHost.setAttribute("data-no-translate", "");
+    selectionHost.style.cssText = "all:initial;position:fixed;z-index:2147483647;pointer-events:auto;";
+    selectionRoot = selectionHost.attachShadow({ mode: "closed" });
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { all: initial; color-scheme: light dark; }
+      .card {
+        width: min(320px, calc(100vw - 16px));
+        overflow: hidden;
+        border: 1px solid rgba(60, 60, 67, .18);
+        border-radius: 14px;
+        color: #1d1d1f;
+        background: rgba(255, 255, 255, .94);
+        box-shadow: 0 16px 46px rgba(0, 0, 0, .2);
+        font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        backdrop-filter: blur(20px) saturate(1.2);
+      }
+      .action {
+        width: 100%;
+        min-height: 40px;
+        padding: 0 15px;
+        border: 0;
+        color: #fff;
+        background: #087af0;
+        cursor: pointer;
+        font: 700 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .body { display: grid; gap: 10px; padding: 13px 15px 15px; }
+      .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .title { font-weight: 750; }
+      .close {
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        color: rgba(29, 29, 31, .68);
+        background: rgba(60, 60, 67, .1);
+        cursor: pointer;
+        font: 18px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .label {
+        margin-bottom: 3px;
+        color: rgba(29, 29, 31, .58);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+      }
+      .text { max-height: 132px; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+      .original { color: rgba(29, 29, 31, .68); }
+      .error { color: #c9344a; }
+      @media (prefers-color-scheme: dark) {
+        .card {
+          border-color: rgba(255, 255, 255, .18);
+          color: #f5f5f7;
+          background: rgba(35, 35, 38, .94);
+        }
+        .close {
+          color: rgba(245, 245, 247, .72);
+          background: rgba(255, 255, 255, .1);
+        }
+        .label { color: rgba(245, 245, 247, .62); }
+        .original { color: rgba(245, 245, 247, .72); }
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .card { animation: arrive 180ms cubic-bezier(.22, 1, .36, 1) both; }
+        @keyframes arrive {
+          from { opacity: 0; transform: translate3d(0, 4px, 0) scale(.98); }
+          to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+        }
+      }
+    `;
+    selectionRoot.append(style);
+    document.documentElement.append(selectionHost);
+    return selectionRoot;
+  }
+
+  function positionSelectionUi(rectangle) {
+    if (!selectionHost) {
+      return;
+    }
+
+    const width = Math.max(0, Math.min(320, window.innerWidth - 16));
+    const left = Math.min(
+      Math.max(8, Number(rectangle?.left) || window.innerWidth / 2 - width / 2),
+      Math.max(8, window.innerWidth - width - 8)
+    );
+    const below = (Number(rectangle?.bottom) || window.innerHeight / 2) + 8;
+    const top = below + 180 <= window.innerHeight
+      ? below
+      : Math.max(8, (Number(rectangle?.top) || window.innerHeight / 2) - 188);
+    selectionHost.style.left = `${left}px`;
+    selectionHost.style.top = `${top}px`;
+  }
+
+  function createSelectionCard(rectangle, title) {
+    const root = ensureSelectionRoot();
+    const card = document.createElement("section");
+    const body = document.createElement("div");
+    const header = document.createElement("div");
+    const heading = document.createElement("strong");
+    const closeButton = document.createElement("button");
+    card.className = "card";
+    body.className = "body";
+    header.className = "header";
+    heading.className = "title";
+    heading.textContent = title;
+    closeButton.className = "close";
+    closeButton.type = "button";
+    closeButton.setAttribute("aria-label", t("close", null, "Close"));
+    closeButton.textContent = "×";
+    closeButton.addEventListener("click", closeSelectionUi);
+    header.append(heading, closeButton);
+    body.append(header);
+    card.append(body);
+    root.replaceChildren(root.querySelector("style"), card);
+    positionSelectionUi(rectangle);
+    return body;
+  }
+
+  function appendSelectionText(body, label, text, className = "") {
+    const section = document.createElement("div");
+    const heading = document.createElement("div");
+    const content = document.createElement("div");
+    heading.className = "label";
+    heading.textContent = label;
+    content.className = `text ${className}`.trim();
+    content.textContent = text;
+    section.append(heading, content);
+    body.append(section);
+  }
+
+  function getSelectionDetails(preferredText = "") {
+    const selection = window.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    const commonNode = range?.commonAncestorContainer;
+    const commonElement = commonNode?.nodeType === Node.ELEMENT_NODE
+      ? commonNode
+      : commonNode?.parentElement;
+
+    if (commonElement && (isEditableElement(commonElement) || isBlockedElement(commonElement))) {
+      return null;
+    }
+
+    const text = String(preferredText || selection?.toString() || "").trim();
+
+    if (!shouldTranslateText(text)) {
+      return null;
+    }
+
+    let rectangle;
+
+    try {
+      rectangle = range?.getBoundingClientRect();
+    } catch {
+      rectangle = undefined;
+    }
+
+    return { rectangle, text };
+  }
+
+  function showSelectionError(details, message) {
+    const body = createSelectionCard(
+      details?.rectangle,
+      t("translationStopped", null, "Translation stopped")
+    );
+    const error = document.createElement("div");
+    error.className = "text error";
+    error.textContent = message;
+    body.append(error);
+  }
+
+  async function translateSelection(details) {
+    if (details.text.length > MAX_SELECTION_CHARACTERS) {
+      showSelectionError(
+        details,
+        t("selectionTooLong", null, "Select no more than 4,000 characters.")
+      );
+      return;
+    }
+
+    const requestRevision = ++selectionRequestRevision;
+    const loadingBody = createSelectionCard(
+      details.rectangle,
+      t("selectionTranslating", null, "Translating selection…")
+    );
+    appendSelectionText(
+      loadingBody,
+      t("selectionOriginal", null, "Original"),
+      details.text,
+      "original"
+    );
+    const { terms, wholeTerms } = getProtectedTermSets();
+
+    try {
+      const response = await api.runtime.sendMessage({
+        type: "translateBatch",
+        sourceLanguage: resolveRequestSourceLanguage(state.sourceLanguage),
+        items: [{
+          id: "selection",
+          text: details.text,
+          context: addPageLanguageContext(
+            "selection",
+            state.sourceLanguage === "auto" ? state.detectedLanguage : ""
+          ),
+          kind: "text",
+          protectedTerms: selectProtectedTerms(details.text, terms, "text", wholeTerms)
+            .slice(0, MAX_PROTECTED_TERMS_PER_ITEM)
+        }]
+      });
+
+      if (requestRevision !== selectionRequestRevision || !selectionHost?.isConnected) {
+        return;
+      }
+
+      const translated = response.translations?.find(({ id }) => id === "selection")?.text;
+
+      if (typeof translated !== "string") {
+        throw new Error("The translation response did not include the selected text.");
+      }
+
+      state.apiItems += Number(response.apiItems || 0);
+      state.cacheEntries = Number.isFinite(Number(response.cacheEntries))
+        ? Number(response.cacheEntries)
+        : state.cacheEntries;
+      state.cacheHits += Number(response.cacheHits || 0);
+      reportStatus();
+      const body = createSelectionCard(
+        details.rectangle,
+        t("selectionTranslation", null, "Translation")
+      );
+      appendSelectionText(
+        body,
+        t("selectionOriginal", null, "Original"),
+        details.text,
+        "original"
+      );
+      appendSelectionText(
+        body,
+        t("selectionTranslation", null, "Translation"),
+        translated
+      );
+    } catch (error) {
+      if (requestRevision === selectionRequestRevision) {
+        showSelectionError(details, String(error?.message || error));
+      }
+    }
+  }
+
+  function showSelectionAction(details) {
+    selectionRequestRevision += 1;
+    const root = ensureSelectionRoot();
+    const button = document.createElement("button");
+    button.className = "action";
+    button.type = "button";
+    button.textContent = t("translateSelection", null, "Translate");
+    button.addEventListener("click", () => void translateSelection(details), { once: true });
+    root.replaceChildren(root.querySelector("style"), button);
+    positionSelectionUi(details.rectangle);
+  }
+
+  function handleSelectionPointerUp(event) {
+    if (selectionHost && event.composedPath().includes(selectionHost)) {
+      return;
+    }
+
+    setTimeout(() => {
+      const details = getSelectionDetails();
+
+      if (details) {
+        showSelectionAction(details);
+      }
+    }, 0);
+  }
+
+  function handleSelectionPointerDown(event) {
+    if (selectionHost && !event.composedPath().includes(selectionHost)) {
+      closeSelectionUi();
     }
   }
 
@@ -2257,6 +2697,7 @@
       state.error = "";
       state.enabled = true;
       state.siteMode = "session";
+      state.viewMode = "translated";
       routeRescanPending = false;
       updateRouteMonitoring();
       resumeObserver();
@@ -2264,8 +2705,22 @@
       return Promise.resolve(publicStatus());
     }
 
-    if (message?.type === "restoreNow") {
-      return restorePage().then(() => publicStatus());
+    if (message?.type === "restoreNow" || message?.type === "showOriginal") {
+      return showOriginal();
+    }
+
+    if (message?.type === "showTranslation") {
+      return showTranslation();
+    }
+
+    if (message?.type === "translateSelection") {
+      const details = getSelectionDetails(message.text);
+
+      if (details) {
+        void translateSelection(details);
+      }
+
+      return Promise.resolve();
     }
 
     if (message?.type === "settingsChanged") {
@@ -2277,15 +2732,18 @@
   });
 
   window.addEventListener("hashchange", checkRouteChange);
-  window.addEventListener("pagehide", cancelActiveTranslations);
+  window.addEventListener("pagehide", () => {
+    closeSelectionUi();
+    cancelActiveTranslations();
+  });
   window.addEventListener("popstate", checkRouteChange);
 
-  if (window.top === window) {
-    window.addEventListener("resize", handleViewportMovement, { passive: true });
-    window.addEventListener("scroll", handleViewportMovement, { capture: true, passive: true });
-  }
+  window.addEventListener("resize", handleViewportMovement, { passive: true });
+  window.addEventListener("scroll", handleViewportMovement, { capture: true, passive: true });
 
   document.addEventListener("visibilitychange", handleVisibilityChange);
+  document.addEventListener("pointerdown", handleSelectionPointerDown, true);
+  document.addEventListener("pointerup", handleSelectionPointerUp, true);
   observeRoot(document);
   void refreshPolicy();
 })();

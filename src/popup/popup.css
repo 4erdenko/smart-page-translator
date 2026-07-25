@@ -180,7 +180,19 @@ select {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-top: 13px;
+  margin-top: 10px;
+}
+
+.metric-details {
+  margin-top: 12px;
+}
+
+.metric-details summary {
+  color: #77738b;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+  text-align: center;
 }
 
 .metrics div {
@@ -207,9 +219,18 @@ select {
 
 .actions {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 9px;
   margin-top: 12px;
+}
+
+.actions button:only-child,
+.actions .primary {
+  min-width: 0;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 button {
