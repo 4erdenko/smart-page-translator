@@ -1,12 +1,12 @@
 # Privacy Notice
 
-Effective date: July 24, 2026.
+Effective date: July 25, 2026.
 
 Smart Page Translator does not include analytics, advertising, or telemetry.
 
-When translation is enabled for a website, the extension sends non-editable page text, short DOM context, and protected brand terms directly to the translation provider selected by the user: DeepSeek or OpenAI. Same-origin embedded frames follow the website rule. Cross-origin frames remain disabled unless their own origin is explicitly listed under Always translate websites. Provider processing and retention are governed by the user's account and that provider's terms. Form values, editable text, scripts, styles, images, and browsing history are not sent for translation.
+When translation is enabled for a website, the extension sends non-editable page text, short DOM context, and protected brand terms directly to the translation provider selected by the user: DeepSeek or OpenAI. Text selected on a page is sent only after the user explicitly invokes Translate from the selection popup or context menu. Same-origin embedded frames follow the website rule. Cross-origin frames remain disabled unless their own origin is explicitly listed under Always translate websites. Provider processing and retention are governed by the user's account and that provider's terms. Form values, editable text, scripts, styles, images, and browsing history are not sent for translation.
 
-API keys, website rules, settings, source text, and translated text are stored locally through the browser extension storage API. Keys are available only to extension contexts and are never displayed after saving. A key is sent only to the selected provider as an authorization credential. Firefox declares this transfer as `authenticationInfo` and translated page text as `websiteContent` in its built-in data-collection consent metadata. Local extension storage is not a hardware-backed secrets vault; restricted keys with conservative spending limits are recommended.
+API keys, website rules, settings, user-defined protected terms, source text, and translated text are stored locally through the browser extension storage API. Keys are available only to extension contexts and are never displayed after saving. A key is sent only to the selected provider as an authorization credential. Firefox declares this transfer as `authenticationInfo` and translated page text as `websiteContent` in its built-in data-collection consent metadata. Local extension storage is not a hardware-backed secrets vault; restricted keys with conservative spending limits are recommended.
 
 The translation cache is limited by phrase count and serialized byte size. Users can clear it at any time from Settings. Removing the extension also allows the browser to remove its local data according to browser policy.
 

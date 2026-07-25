@@ -6,12 +6,16 @@ Cross-browser Manifest V3 WebExtension for complete, cached website translation.
 
 - Translates text nodes, product names, placeholders, image labels, tooltips, accessibility labels, options, and dynamically inserted DOM content.
 - Preserves detected brands, trademarks, model identifiers, and proper names while translating descriptive product text.
+- Lets users add exact protected names and terms that must remain unchanged.
+- Translates selected text from a compact, isolated popup without modifying the page.
+- Switches a translated page back to its original text and restores translation from the local cache.
 - Supports DeepSeek and OpenAI. API keys are entered in Settings and stored in local extension storage; `.env` files and build-time keys are not used.
 - Loads the models available to the configured provider account from its `/models` endpoint and filters out audio, image, embedding, moderation, realtime, and other incompatible models.
 - Applies automatic language rules and per-origin `Always`, `Automatic`, or `Never` policies, including SPA route changes.
 - Translates same-origin frames with the parent website while requiring an explicit `Always` rule for cross-origin frames.
 - Reuses translations from a persistent, LRU-style local cache.
 - Keeps private/incognito page text out of persistent storage and offers one-time translation for those tabs.
+- Localizes the extension UI in English and Russian through standard WebExtension locale resources.
 
 ## Browser support
 
@@ -60,6 +64,7 @@ The shared manifest lives in `manifests/base.json`; browser-specific background 
 ## Permissions
 
 - `activeTab` lets the popup identify and message the page on which the user opened it.
+- `contextMenus` adds the explicit Translate selection command.
 - `storage` stores provider keys, settings, website rules, and cached translations locally.
 - `unlimitedStorage` prevents the bounded 16 MiB cache from colliding with Chrome's smaller default local-storage quota.
 - The content script matches all websites because translating arbitrary pages is the extension's single purpose.
@@ -71,7 +76,7 @@ The extension does not request browsing history, cookies, downloads, clipboard, 
 
 The default cache holds 8,000 phrases, roughly 64,000 source words at eight words per phrase. The safe configurable maximum is 20,000 phrases, or roughly 160,000 source words, but the independent 16 MiB serialized-size limit is authoritative. The `unlimitedStorage` permission prevents the cache from colliding with Chrome's normal 10 MiB `storage.local` quota; the extension still enforces its own tighter limit.
 
-DOM references are weak, scan and cleanup work is time-sliced, request queues are bounded, and at most 12 text-bound magic rectangles can exist globally. A real cache miss starts the shimmer before the provider request and keeps it perceptible even for a fast response. Translation motion uses compositor-friendly transforms and opacity, so it follows the display refresh rate, including 120 Hz displays, without a JavaScript frame loop. Cache writes are serialized and completed before a Manifest V3 background worker may suspend. Chrome storage access is restricted to trusted extension contexts. Firefox does not expose the equivalent access-level control, so bundled content scripts never read provider credentials and receive only sanitized settings through validated extension messages.
+DOM references are weak, scan and cleanup work is time-sliced, request queues are bounded, and at most 12 text-bound magic rectangles can exist globally. Visible text owns both translation lanes; offscreen text uses at most one idle-scheduled lane so background translation does not compete with newly visible content. A real cache miss starts the shimmer before the provider request and keeps it perceptible even for a fast response. Translation motion uses compositor-friendly transforms and opacity, so it follows the display refresh rate, including 120 Hz displays, without a JavaScript frame loop. Cache writes are serialized and completed before a Manifest V3 background worker may suspend. Chrome storage access is restricted to trusted extension contexts. Firefox does not expose the equivalent access-level control, so bundled content scripts never read provider credentials and receive only sanitized settings through validated extension messages.
 
 Background validation limits each translation batch to 48 items and 10,000 input characters. The extension does not impose a per-minute request or character quota by default; provider account limits remain authoritative. Concurrency, queue length, network retries, and recursive response splitting stay bounded to prevent runaway work and memory growth without stopping an ordinary large page.
 
@@ -79,7 +84,7 @@ Cache phrases are stored as independent extension-storage entries. A completed t
 
 ## Privacy and provider APIs
 
-When translation is active, non-editable page text is sent directly to the selected provider. User-entered form values are not sent. Keys are never returned to content scripts or displayed after saving, but browser extension storage is not a hardware-backed secret vault; use restricted, low-limit provider keys. Private/incognito translations bypass the persistent cache, and website rules cannot be saved from a private tab.
+When translation is active, non-editable page text is sent directly to the selected provider. A selection is sent only after the user explicitly chooses Translate. User-entered form values are not sent. Keys are never returned to content scripts or displayed after saving, but browser extension storage is not a hardware-backed secret vault; use restricted, low-limit provider keys. Private/incognito translations bypass the persistent cache, and website rules cannot be saved from a private tab.
 
 See [PRIVACY.md](PRIVACY.md) for the complete data-flow summary and [SECURITY.md](SECURITY.md) for secret-handling guidance.
 

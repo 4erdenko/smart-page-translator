@@ -9,6 +9,8 @@
 
 Do not edit `dist/` or `artifacts/`; both are generated and ignored. Keep provider-independent behavior in shared libraries. A provider adapter must define its endpoint-specific request fields, model filtering, and tests without leaking credentials to content scripts.
 
+Keep UI strings in `src/_locales/*/messages.json` and use `src/lib/ui-i18n.js` from popup and options code. Every shipped locale must contain the same message keys. Use `Intl.DisplayNames` through the shared helper instead of duplicating translated language names.
+
 Use short Conventional Commit messages such as `feat: add provider model discovery`. Pull requests should describe user-visible behavior, compatibility, privacy or quota impact, and the exact validation performed. Include screenshots or a short recording for UI changes.
 
 API keys must be entered through the extension Settings UI. Never add build-time keys, fixtures containing live secrets, or environment-based credential loading.

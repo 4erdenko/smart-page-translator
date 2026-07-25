@@ -4,6 +4,12 @@ All notable changes will be documented in this file.
 
 ## Unreleased
 
+- Added original/translated page switching backed by the existing local cache.
+- Added selected-text translation through an isolated page popup and context menu.
+- Added English and Russian WebExtension UI localization with one shared language list.
+- Added user-defined protected names and terms.
+- Prioritized visible text while limiting offscreen translation to one idle-scheduled lane.
+- Replaced popup status polling with content-script status events.
 - Documented Chrome Web Store Limited Use and explicit pre-install consent requirements.
 - Added deterministic source packaging, allowlisted browser builds, and reviewer-ready third-party source links.
 - Updated the development lint dependency tree to remove a high-severity brace-expansion advisory.
