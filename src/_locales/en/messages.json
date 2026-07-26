@@ -140,6 +140,21 @@
   "waitingForRuleDetails": {
     "message": "{language} is not selected for automatic translation."
   },
+  "detectedLanguage": {
+    "message": "Detected language: {language}"
+  },
+  "translationAvailableDetails": {
+    "message": "Translate now, always translate this website, or enable this language in Settings."
+  },
+  "translationNotAutomatic": {
+    "message": "Automatic translation is off"
+  },
+  "translationAvailableWithoutLanguageDetails": {
+    "message": "Translate this page now or always translate this website."
+  },
+  "pageAlreadyTargetLanguageDetails": {
+    "message": "This page already uses your target language. Choose a different target language to translate it."
+  },
   "pageLanguage": {
     "message": "the page language"
   },
@@ -209,6 +224,12 @@
   "apiKeyHint": {
     "message": "The key is stored only in local extension storage and is never displayed again."
   },
+  "providerConsentLabel": {
+    "message": "I agree that the API key I enter will be sent to the selected provider to verify and authorize access. Page text translated automatically or manually, including short context, will also be sent to that provider. Editable fields, selections, and PDF text are sent only after an explicit action."
+  },
+  "providerConsentRequired": {
+    "message": "Confirm provider data sharing before saving or checking this API key."
+  },
   "loadModels": {
     "message": "Load models"
   },
@@ -243,7 +264,7 @@
     "message": "Translation view"
   },
   "followDefaultView": {
-    "message": "Use default ({view})"
+    "message": "Default: {view}"
   },
   "automaticTranslation": {
     "message": "Automatic translation"
@@ -474,13 +495,13 @@
     "message": "Before connecting"
   },
   "onboardingPrivacyDescription": {
-    "message": "Use a separate API key with a spending limit. The key stays in local extension storage. Page text and short context go directly to the chosen provider only when translation runs; fields, selections, and PDF text require an explicit action."
+    "message": "Use a separate API key with a spending limit. The key is sent to the selected provider to verify and authorize requests, then stays in local extension storage. Page text and short context go directly to that provider only when translation runs; fields, selections, and PDF text require an explicit action. Source and translated text are cached locally by default."
   },
   "readPrivacyNotice": {
     "message": "Read the privacy notice"
   },
   "checkKeyAndStart": {
-    "message": "Check key and start"
+    "message": "Agree, verify key, and start"
   },
   "setUpLater": {
     "message": "Set up later"
@@ -490,6 +511,15 @@
   },
   "advancedSettings": {
     "message": "Advanced settings"
+  },
+  "advancedSettingsDescription": {
+    "message": "Automation, protected terms, motion, and local cache limits."
+  },
+  "onboardingConsentLabel": {
+    "message": "I agree that my API key will be sent to the selected provider to verify and authorize access. Page text translated automatically or manually, including short context, will also be sent to that provider. Editable fields, selections, and PDF text are sent only after an explicit action."
+  },
+  "onboardingConsentRequired": {
+    "message": "Confirm provider data sharing before continuing."
   },
   "checkingConnection": {
     "message": "Checking connection…"
@@ -635,6 +665,18 @@
   "pdfReady": {
     "message": "PDF ready. Translation starts only when you request it."
   },
+  "pdfTranslationPendingTitle": {
+    "message": "Translation not started"
+  },
+  "pdfTranslationPendingDetails": {
+    "message": "Choose a language and translate the document to fill this pane."
+  },
+  "pdfPageNoTextTitle": {
+    "message": "No translatable text on this page"
+  },
+  "pdfPageNoTextDetails": {
+    "message": "The original page will be preserved in the translated download."
+  },
   "pdfNoText": {
     "message": "No translatable text was found in this PDF."
   },
@@ -642,7 +684,7 @@
     "message": "Translating {current} of {total} batches…"
   },
   "pdfTranslated": {
-    "message": "PDF translation complete."
+    "message": "Translated PDF is ready to review or download."
   },
   "pdfTranslatedBadge": {
     "message": "Translated"
@@ -655,6 +697,9 @@
   },
   "pdfExportTooLarge": {
     "message": "The flattened PDF exceeds the safe 128 MiB export limit. Split the document and try again."
+  },
+  "pdfUnsupportedExportCharacters": {
+    "message": "This translation contains characters the bundled PDF font cannot render. Export was stopped to avoid missing text."
   },
   "pdfTranslationDoesNotFit": {
     "message": "A translated text block does not fit its PDF region. Review the document layout."

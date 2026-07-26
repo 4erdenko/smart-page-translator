@@ -3,16 +3,24 @@
   const { t } = globalThis.SmartTranslationUiI18n;
   const {
     addPageLanguageContext,
+    createProtectedTermIndex,
+    discoverOpenShadowRootsAcrossReferences,
     findClosestTextKindElement,
     getBrandTermVariants,
     getImplicitOptionValue,
     getInheritedTextKind,
+    getPageContextChange,
+    getPendingQueueDecision,
     getSafeContextText,
+    getShadowDiscoveryDelay,
     getTranslatableAttributes,
+    getUtf8ByteLength,
+    hasMeaningfulText,
     isBlockedAttributeElement,
     isBlockedElement,
     isEditableElement,
     isLikelyPersonalName,
+    isTextWithinLimits,
     normalizeLanguageCode,
     normalizeText,
     resolveOriginalText,
@@ -20,7 +28,11 @@
     selectProtectedTerms,
     shouldAutoTranslateLanguage,
     shouldDetectPageLanguage,
+    shouldPruneScanNode,
+    shouldPreserveTextWhitespace,
     shouldRefreshRoutePolicy,
+    shouldRunShadowDiscovery,
+    shouldRunShadowDiscoveryRetryRound,
     shouldStartTranslation,
     shouldTranslateText,
     splitBoundaryWhitespace,
@@ -34,11 +46,15 @@
   const MAX_DOCUMENT_SCAN_NODES_PER_SLICE = 600;
   const MAX_LANGUAGE_SAMPLE_NODES = 6000;
   const MAX_PENDING_SCAN_ROOTS = 256;
+  const MAX_PENDING_BYTES = 2_048_000;
+  const MAX_PENDING_CHARACTERS = 1_024_000;
   const MAX_PENDING_TARGETS = 5000;
   const MAX_PARALLEL_BATCHES = 2;
   const MAX_PROTECTED_TERMS_PER_ITEM = 20;
   const MAX_SELECTION_CHARACTERS = 4000;
   const MAX_TEXT_SEGMENT_CHARACTERS = 8000;
+  const MAX_SOURCE_TEXT_BYTES = 128_000;
+  const MAX_SOURCE_TEXT_CHARACTERS = 64_000;
   const MAX_ANIMATED_TEXT_RECTS = 12;
   const MIN_TRANSLATION_MOTION_MS = 720;
   const MAX_CLEANUP_ITEMS_PER_SLICE = 240;
@@ -50,6 +66,10 @@
   const RECOVERY_SCAN_DELAY = 320;
   const SCAN_DELAY = 48;
   const SCAN_TIME_BUDGET_MS = 8;
+  const SHADOW_DISCOVERY_DELAY = 1000;
+  const SHADOW_DISCOVERY_SLICE_DELAY = 250;
+  const MAX_SHADOW_DISCOVERY_NODES_PER_SLICE = 400;
+  const MAX_SHADOW_DISCOVERY_RETRY_ROUNDS = 4;
   const site = resolveSite();
   const observedRootRefs = new Set();
   const observedRootLookup = new WeakMap();
@@ -73,11 +93,14 @@
   let activeBatchCount = 0;
   let activeBrandScanCount = 0;
   let activeOffscreenBatchCount = 0;
-  let activeMotionElementCount = 0;
+  let activePolicyRefreshCount = 0;
   let cleanupJob;
   let cleanupRequested = false;
   let cleanupTimer;
   let currentSettings = {};
+  let currentDeclaredLanguage = normalizeLanguageCode(
+    document.documentElement?.getAttribute("lang") || ""
+  );
   let currentUrl = location.href;
   let documentRescanRequested = false;
   let documentScanInProgress = false;
@@ -90,8 +113,12 @@
   let motionRequestSequence = 0;
   let lastActiveViewMode = "translated";
   let observerActive = false;
+  let pageSuspended = false;
   let pendingTargetCount = 0;
+  let pendingBytes = 0;
+  let pendingCharacters = 0;
   let policyRevision = 0;
+  let protectedTermIndex;
   let settingsRefreshRevision = 0;
   let queueBackoffUntil = 0;
   let recoveryScanTimer;
@@ -106,10 +133,19 @@
   let selectionRequestRevision = 0;
   let selectionRoot;
   let subtreeScanTimer;
+  let shadowDiscoveryIdleHandle;
+  let shadowDiscoveryIterator;
+  let shadowDiscoveryReferencesRemaining = 0;
+  let shadowDiscoveryRetryReferences = new Set();
+  let shadowDiscoveryRetryRounds = 0;
+  let shadowDiscoveryRoundIsRetry = false;
+  let shadowDiscoveryTimer;
+  let shadowDiscoveryWalkers = new WeakMap();
   let translationCancellationPromise = Promise.resolve();
   let viewSwitchJob;
   let visibilityElementLookup = new WeakMap();
   let needsFullRescan = false;
+  const motionTimers = new Set();
   const state = {
     animationEnabled: true,
     apiItems: 0,
@@ -135,6 +171,8 @@
     return state.enabled
       && ["bilingual", "translated"].includes(state.viewMode)
       && !state.error
+      && !pageSuspended
+      && activePolicyRefreshCount === 0
       && !restoreJob
       && !viewSwitchJob;
   }
@@ -246,6 +284,8 @@
       model: state.model,
       provider: state.provider,
       protectedTerms: state.protectedTerms.length,
+      pendingBytes,
+      pendingCharacters,
       site,
       siteMode: state.siteMode,
       trackedReferences: trackedTextRefs.size + trackedAttributeRecords.size + observedRootRefs.size,
@@ -257,6 +297,16 @@
 
   function reportStatus() {
     api.runtime.sendMessage({ type: "translationStatus", status: publicStatus() }).catch(() => undefined);
+  }
+
+  function acceptScanNode(node) {
+    return shouldPruneScanNode(node, Node.ELEMENT_NODE)
+      ? NodeFilter.FILTER_REJECT
+      : NodeFilter.FILTER_ACCEPT;
+  }
+
+  function createScanWalker(root, showWhat) {
+    return document.createTreeWalker(root, showWhat, { acceptNode: acceptScanNode });
   }
 
   function observeRoot(root) {
@@ -271,7 +321,7 @@
     if (observerActive) {
       observer.observe(root, {
         attributes: true,
-        attributeFilter: ["alt", "aria-description", "aria-label", "label", "placeholder", "title", "value"],
+        attributeFilter: ["alt", "aria-description", "aria-label", "label", "lang", "placeholder", "title", "value"],
         characterData: true,
         childList: true,
         subtree: true
@@ -308,7 +358,7 @@
       try {
         observer.observe(root, {
           attributes: true,
-          attributeFilter: ["alt", "aria-description", "aria-label", "label", "placeholder", "title", "value"],
+          attributeFilter: ["alt", "aria-description", "aria-label", "label", "lang", "placeholder", "title", "value"],
           characterData: true,
           childList: true,
           subtree: true
@@ -318,6 +368,8 @@
         observedRootLookup.delete(root);
       }
     }
+
+    scheduleShadowDiscovery();
   }
 
   function getElementContext(element, text, attribute = "", kind = "text") {
@@ -418,6 +470,8 @@
   }
 
   function addBrandTerm(value, protectWhole = false) {
+    protectedTermIndex = undefined;
+
     for (const term of getBrandTermVariants(value)) {
       const shouldProtectWhole = protectWhole || wholeBrandTerms.has(term);
       brandTerms.delete(term);
@@ -438,7 +492,11 @@
 
   function refreshPageBrandTerms() {
     for (const meta of document.querySelectorAll('meta[name="application-name"], meta[property="og:site_name"]')) {
-      addBrandTerm(meta.getAttribute("content"), true);
+      const value = meta.getAttribute("content") ?? "";
+
+      if (isSourceTextWithinLimits(value)) {
+        addBrandTerm(value, true);
+      }
     }
   }
 
@@ -454,7 +512,20 @@
     return { terms, wholeTerms };
   }
 
+  function getProtectedTermIndex() {
+    if (!protectedTermIndex) {
+      const { terms, wholeTerms } = getProtectedTermSets();
+      protectedTermIndex = createProtectedTermIndex(terms, wholeTerms);
+    }
+
+    return protectedTermIndex;
+  }
+
   function collectBrandNode(node) {
+    if (node?.nodeType === Node.TEXT_NODE && !hasMeaningfulText(node.nodeValue)) {
+      return;
+    }
+
     const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     const brandElement = findClosestTextKindElement(element, "brand-name");
 
@@ -463,8 +534,10 @@
     }
 
     if (node.nodeType === Node.TEXT_NODE) {
-      if (!isBlockedElement(element)) {
-        addBrandTerm(splitBoundaryWhitespace(node.nodeValue ?? "").core, true);
+      const value = node.nodeValue ?? "";
+
+      if (!isBlockedElement(element) && isSourceTextWithinLimits(value)) {
+        addBrandTerm(splitBoundaryWhitespace(value).core, true);
       }
 
       return;
@@ -476,7 +549,11 @@
 
     for (const attribute of getTranslatableAttributes(element)) {
       if (element.hasAttribute(attribute)) {
-        addBrandTerm(splitBoundaryWhitespace(element.getAttribute(attribute) ?? "").core, true);
+        const value = element.getAttribute(attribute) ?? "";
+
+        if (isSourceTextWithinLimits(value)) {
+          addBrandTerm(splitBoundaryWhitespace(value).core, true);
+        }
       }
     }
   }
@@ -494,29 +571,119 @@
     }
   }
 
-  function addPendingTarget(text, context, kind, target) {
-    if (pendingTargetCount >= MAX_PENDING_TARGETS) {
-      needsFullRescan = true;
-      return false;
+  function startBrandScan(job) {
+    if (job.brandScanActive) {
+      return;
     }
 
+    job.brandScanActive = true;
+    activeBrandScanCount += 1;
+  }
+
+  function preparePendingTarget(text, context, kind, target) {
     const normalizedText = normalizeText(text);
     const normalizedContext = normalizeText(context);
-    const key = `${normalizedText}\u0000${normalizedContext}\u0000${kind}`;
-    const segment = pendingSegments.get(key) || {
+
+    return {
       context: normalizedContext,
+      kind,
+      pendingBytes: getUtf8ByteLength(normalizedText) + getUtf8ByteLength(normalizedContext),
+      pendingCharacters: normalizedText.length + normalizedContext.length,
+      target,
+      text: normalizedText
+    };
+  }
+
+  function includeSourceInPendingBudget(preparedTargets, source) {
+    if (preparedTargets.length === 0) {
+      return;
+    }
+
+    const value = String(source ?? "");
+    const sourceBytes = getUtf8ByteLength(value);
+    const characterShare = Math.floor(value.length / preparedTargets.length);
+    const byteShare = Math.floor(sourceBytes / preparedTargets.length);
+
+    preparedTargets.forEach((prepared, index) => {
+      prepared.pendingBytes += byteShare + (index < sourceBytes % preparedTargets.length ? 1 : 0);
+      prepared.pendingCharacters += characterShare + (index < value.length % preparedTargets.length ? 1 : 0);
+    });
+  }
+
+  function addPendingTarget(prepared) {
+    const {
+      context,
+      kind,
+      pendingBytes: targetPendingBytes,
+      pendingCharacters: targetPendingCharacters,
+      target,
+      text
+    } = prepared;
+    const key = `${text}\u0000${context}\u0000${kind}`;
+    const segment = pendingSegments.get(key) || {
+      context,
       key,
       kind,
       protectedTerms: [],
       targets: [],
-      text: normalizedText
+      text
     };
 
+    target.pendingBytes = targetPendingBytes;
+    target.pendingCharacters = targetPendingCharacters;
     segment.targets.push(target);
     pendingSegments.set(key, segment);
     pendingTargetCount += 1;
     trackPendingVisibility(segment, target);
+  }
+
+  function queuePendingTargets(preparedTargets) {
+    const additional = preparedTargets.reduce((total, prepared) => ({
+      bytes: total.bytes + prepared.pendingBytes,
+      characters: total.characters + prepared.pendingCharacters
+    }), { bytes: 0, characters: 0 });
+    const decision = getPendingQueueDecision(
+      { bytes: pendingBytes, characters: pendingCharacters, targets: pendingTargetCount },
+      { ...additional, targets: preparedTargets.length },
+      {
+        bytes: MAX_PENDING_BYTES,
+        characters: MAX_PENDING_CHARACTERS,
+        targets: MAX_PENDING_TARGETS
+      }
+    );
+
+    if (decision === "retry") {
+      needsFullRescan = true;
+      scheduleRecoveryScan();
+      return false;
+    }
+
+    if (decision === "reject") {
+      return false;
+    }
+
+    for (const prepared of preparedTargets) {
+      addPendingTarget(prepared);
+    }
+
+    pendingBytes += additional.bytes;
+    pendingCharacters += additional.characters;
     return true;
+  }
+
+  function releasePendingTargetBudget(target) {
+    pendingBytes = Math.max(0, pendingBytes - Number(target.pendingBytes || 0));
+    pendingCharacters = Math.max(0, pendingCharacters - Number(target.pendingCharacters || 0));
+    target.pendingBytes = 0;
+    target.pendingCharacters = 0;
+  }
+
+  function isSourceTextWithinLimits(value) {
+    return isTextWithinLimits(
+      value,
+      MAX_SOURCE_TEXT_CHARACTERS,
+      MAX_SOURCE_TEXT_BYTES
+    );
   }
 
   function markAttributeQueued(element, attribute) {
@@ -576,6 +743,10 @@
       return;
     }
 
+    if (!hasMeaningfulText(currentValue) || !isSourceTextWithinLimits(currentValue)) {
+      return;
+    }
+
     const parts = splitBoundaryWhitespace(currentValue);
     const textKind = getInheritedTextKind(node.parentElement);
 
@@ -591,20 +762,16 @@
       return;
     }
 
-    const chunks = splitTextForTranslation(parts.core, MAX_TEXT_SEGMENT_CHARACTERS);
-
-    if (pendingTargetCount + chunks.length > MAX_PENDING_TARGETS) {
-      needsFullRescan = true;
-      scheduleRecoveryScan();
-      return;
-    }
+    const chunks = splitTextForTranslation(
+      parts.core,
+      MAX_TEXT_SEGMENT_CHARACTERS,
+      shouldPreserveTextWhitespace(node.parentElement, parts.core),
+      MAX_PENDING_TARGETS
+    );
 
     const nodeReference = createWeakReference(node);
     const assembly = createTranslationAssembly(chunks, currentValue, parts);
-
-    queuedTextNodes.add(node);
-
-    chunks.forEach((chunk, partIndex) => {
+    const preparedTargets = chunks.map((chunk, partIndex) => {
       const target = {
         assembly,
         kind: "text",
@@ -616,13 +783,20 @@
         trailing: parts.trailing
       };
 
-      addPendingTarget(
+      return preparePendingTarget(
         chunk.text,
         getElementContext(node.parentElement, chunk.text, "", textKind),
         textKind,
         target
       );
     });
+    includeSourceInPendingBudget(preparedTargets, currentValue);
+
+    if (!queuePendingTargets(preparedTargets)) {
+      return;
+    }
+
+    queuedTextNodes.add(node);
   }
 
   function buildAssembledTranslation(assembly) {
@@ -665,6 +839,10 @@
       return;
     }
 
+    if (!isSourceTextWithinLimits(currentValue)) {
+      return;
+    }
+
     const parts = splitBoundaryWhitespace(currentValue);
     const textKind = getInheritedTextKind(element);
 
@@ -682,21 +860,14 @@
 
     const chunks = splitTextForTranslation(parts.core, MAX_TEXT_SEGMENT_CHARACTERS);
 
-    if (pendingTargetCount + chunks.length > MAX_PENDING_TARGETS) {
-      needsFullRescan = true;
-      scheduleRecoveryScan();
-      return;
-    }
-
-    if (!markAttributeQueued(element, attribute)) {
+    if (queuedAttributes.get(element)?.has(attribute)) {
       return;
     }
 
     const elementReference = createWeakReference(element);
     const assembly = createTranslationAssembly(chunks, currentValue, parts);
-
-    chunks.forEach((chunk, partIndex) => {
-      addPendingTarget(
+    const preparedTargets = chunks.map((chunk, partIndex) => (
+      preparePendingTarget(
         chunk.text,
         getElementContext(element, chunk.text, attribute, textKind),
         textKind,
@@ -707,8 +878,15 @@
           kind: "attribute",
           partIndex
         }
-      );
-    });
+      )
+    ));
+    includeSourceInPendingBudget(preparedTargets, currentValue);
+
+    if (!queuePendingTargets(preparedTargets)) {
+      return;
+    }
+
+    markAttributeQueued(element, attribute);
   }
 
   function collectElement(element) {
@@ -743,16 +921,17 @@
     documentScanInProgress = true;
     documentRescanRequested = false;
     refreshPageBrandTerms();
-    const scanJob = { brandScanActive: true };
+    const scanJob = { brandScanActive: false };
+    startBrandScan(scanJob);
     let scanPhase = "brands";
     const scanRevision = revision;
-    let walker = document.createTreeWalker(document, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
-    activeBrandScanCount += 1;
+    let walker = createScanWalker(document, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
 
     const finish = () => {
       finishBrandScan(scanJob);
       documentScanInProgress = false;
       scheduleFlush();
+      restartShadowDiscovery();
 
       if (documentRescanRequested && isTranslationViewActive()) {
         documentRescanRequested = false;
@@ -803,7 +982,7 @@
       if (scanPhase === "brands") {
         finishBrandScan(scanJob);
         scanPhase = "content";
-        walker = document.createTreeWalker(document, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+        walker = createScanWalker(document, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
         documentScanTimer = setTimeout(() => {
           documentScanTimer = undefined;
           scanSlice();
@@ -847,7 +1026,7 @@
     }
 
     const job = {
-      brandScanActive: true,
+      brandScanActive: false,
       phase: "brands",
       reference: createWeakReference(root),
       rescanRequested: false,
@@ -855,7 +1034,7 @@
       rootPending: true,
       walker: null
     };
-    activeBrandScanCount += 1;
+    startBrandScan(job);
     subtreeScanJobLookup.set(root, job);
     subtreeScanJobs.push(job);
     scheduleSubtreeScan();
@@ -910,7 +1089,7 @@
           }
         }
 
-        job.walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+        job.walker = createScanWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
       }
 
       const node = job.walker.nextNode();
@@ -1027,10 +1206,122 @@
     }, RECOVERY_SCAN_DELAY);
   }
 
+  function resetShadowDiscoveryRound() {
+    shadowDiscoveryIterator = undefined;
+    shadowDiscoveryReferencesRemaining = 0;
+    shadowDiscoveryRoundIsRetry = false;
+  }
+
+  function resetShadowDiscoveryState() {
+    resetShadowDiscoveryRound();
+    shadowDiscoveryRetryReferences = new Set();
+    shadowDiscoveryRetryRounds = 0;
+    shadowDiscoveryWalkers = new WeakMap();
+  }
+
+  function cancelShadowDiscovery() {
+    clearTimeout(shadowDiscoveryTimer);
+    shadowDiscoveryTimer = undefined;
+
+    if (shadowDiscoveryIdleHandle !== undefined && typeof cancelIdleCallback === "function") {
+      cancelIdleCallback(shadowDiscoveryIdleHandle);
+    }
+
+    shadowDiscoveryIdleHandle = undefined;
+    resetShadowDiscoveryState();
+  }
+
+  function scheduleShadowDiscovery(delay = SHADOW_DISCOVERY_DELAY) {
+    if (!shouldRunShadowDiscovery(isTranslationViewActive(), document.visibilityState)
+      || shadowDiscoveryTimer
+      || shadowDiscoveryIdleHandle !== undefined) {
+      return;
+    }
+
+    shadowDiscoveryTimer = setTimeout(() => {
+      shadowDiscoveryTimer = undefined;
+
+      if (typeof requestIdleCallback === "function") {
+        shadowDiscoveryIdleHandle = requestIdleCallback(() => {
+          shadowDiscoveryIdleHandle = undefined;
+          runShadowDiscoverySlice();
+        }, { timeout: SHADOW_DISCOVERY_DELAY });
+      } else {
+        runShadowDiscoverySlice();
+      }
+    }, Math.max(0, delay));
+  }
+
+  function runShadowDiscoverySlice() {
+    if (!shouldRunShadowDiscovery(isTranslationViewActive(), document.visibilityState)) {
+      cancelShadowDiscovery();
+      return;
+    }
+
+    if (!shadowDiscoveryIterator) {
+      shadowDiscoveryRoundIsRetry = shouldRunShadowDiscoveryRetryRound(
+        shadowDiscoveryRetryReferences.size,
+        shadowDiscoveryRetryRounds,
+        MAX_SHADOW_DISCOVERY_RETRY_ROUNDS
+      );
+
+      if (shadowDiscoveryRoundIsRetry) {
+        const retryReferences = shadowDiscoveryRetryReferences;
+        shadowDiscoveryRetryReferences = new Set();
+        shadowDiscoveryIterator = retryReferences.values();
+        shadowDiscoveryReferencesRemaining = retryReferences.size;
+      } else {
+        shadowDiscoveryRetryReferences = new Set();
+        shadowDiscoveryIterator = observedRootRefs.values();
+        shadowDiscoveryReferencesRemaining = observedRootRefs.size;
+      }
+    }
+
+    const result = discoverOpenShadowRootsAcrossReferences({
+      createWalker: (root) => createScanWalker(root, NodeFilter.SHOW_ELEMENT),
+      isRootActive: (root) => root === document || root.host?.isConnected,
+      iterator: shadowDiscoveryIterator,
+      maximumWork: MAX_SHADOW_DISCOVERY_NODES_PER_SLICE,
+      referencesRemaining: shadowDiscoveryReferencesRemaining,
+      visitRoot: (shadowRoot) => {
+        if (!observedRootLookup.has(shadowRoot)) {
+          observeRoot(shadowRoot);
+          scanSubtree(shadowRoot);
+        }
+      },
+      walkers: shadowDiscoveryWalkers
+    });
+    for (const reference of result.incompleteReferences) {
+      shadowDiscoveryRetryReferences.add(reference);
+    }
+
+    shadowDiscoveryReferencesRemaining = result.referencesRemaining;
+    const roundComplete = result.complete;
+    const passComplete = roundComplete && shadowDiscoveryRetryReferences.size === 0;
+
+    if (roundComplete) {
+      shadowDiscoveryRetryRounds = shadowDiscoveryRoundIsRetry
+        ? shadowDiscoveryRetryRounds + 1
+        : 0;
+      resetShadowDiscoveryRound();
+    }
+
+    scheduleShadowDiscovery(getShadowDiscoveryDelay(
+      passComplete,
+      SHADOW_DISCOVERY_SLICE_DELAY,
+      SHADOW_DISCOVERY_DELAY
+    ));
+  }
+
+  function restartShadowDiscovery() {
+    cancelShadowDiscovery();
+    scheduleShadowDiscovery(0);
+  }
+
   function takeBatch(visibleOnly = false) {
     const selected = [];
     let characters = 0;
-    const { terms, wholeTerms } = getProtectedTermSets();
+    const termIndex = getProtectedTermIndex();
 
     const takeSegment = (key, segment) => {
       const segmentCharacters = segment.text.length + segment.context.length;
@@ -1043,13 +1334,17 @@
 
       segment.protectedTerms = selectProtectedTerms(
         segment.text,
-        terms,
-        segment.kind,
-        wholeTerms
+        termIndex,
+        segment.kind
       ).slice(0, MAX_PROTECTED_TERMS_PER_ITEM);
       pendingSegments.delete(key);
       visiblePendingCounts.delete(segment);
       pendingTargetCount = Math.max(0, pendingTargetCount - segment.targets.length);
+
+      for (const target of segment.targets) {
+        releasePendingTargetBudget(target);
+      }
+
       selected.push(segment);
       characters += segmentCharacters;
       return true;
@@ -1295,6 +1590,7 @@
       pending.connectedTargets.push(target);
     } else {
       releaseQueuedTarget(target);
+      releasePendingTargetBudget(target);
       pendingTargetCount = Math.max(0, pendingTargetCount - 1);
     }
 
@@ -1491,6 +1787,24 @@
     return ensureMotionRoot()?.querySelector(".layer") || null;
   }
 
+  function scheduleMotionTimeout(callback, delay) {
+    const timer = setTimeout(() => {
+      motionTimers.delete(timer);
+      callback();
+    }, delay);
+    motionTimers.add(timer);
+    return timer;
+  }
+
+  function clearMotionTimeout(timer) {
+    clearTimeout(timer);
+    motionTimers.delete(timer);
+  }
+
+  function getActiveMotionElementCount() {
+    return Number(motionRoot?.querySelector(".layer")?.childElementCount || 0);
+  }
+
   function finishMotionElement(element) {
     if (!element.isConnected) {
       return;
@@ -1504,11 +1818,10 @@
       }
 
       removed = true;
-      clearTimeout(fallbackTimer);
+      clearMotionTimeout(fallbackTimer);
       element.removeEventListener("animationend", handleAnimationEnd);
       const layer = element.parentElement;
       element.remove();
-      activeMotionElementCount = Math.max(0, activeMotionElementCount - 1);
 
       if (layer?.isConnected && layer.childElementCount === 0 && motionRoot?.querySelector(".layer") === layer) {
         removeMotion();
@@ -1522,7 +1835,7 @@
 
     element.addEventListener("animationend", handleAnimationEnd);
     element.classList.add("is-complete");
-    fallbackTimer = setTimeout(remove, 420);
+    fallbackTimer = scheduleMotionTimeout(remove, 420);
   }
 
   function getTextRectangles(target, limit) {
@@ -1593,7 +1906,7 @@
   }
 
   function startTranslationMotion(batch) {
-    const availableRectangles = MAX_ANIMATED_TEXT_RECTS - activeMotionElementCount;
+    const availableRectangles = MAX_ANIMATED_TEXT_RECTS - getActiveMotionElementCount();
 
     if (!canShowMotion() || batch.length === 0 || availableRectangles <= 0) {
       return [];
@@ -1638,7 +1951,6 @@
       element.style.height = `${rectangle.bottom - rectangle.top}px`;
       element.style.animationDelay = `${Math.min(72, index * 6)}ms`;
       layer.append(element);
-      activeMotionElementCount += 1;
       return element;
     });
   }
@@ -1672,7 +1984,7 @@
           : 0;
 
         if (remaining > 0) {
-          setTimeout(finishElements, remaining);
+          scheduleMotionTimeout(finishElements, remaining);
         } else {
           finishElements();
         }
@@ -1856,11 +2168,8 @@
     flushIdleHandle = undefined;
     flushScheduledForOffscreen = false;
 
-    if (activeBrandScanCount > 0) {
-      return;
-    }
-
-    while (isTranslationViewActive()
+    while (activeBrandScanCount === 0
+      && isTranslationViewActive()
       && activeBatchCount < MAX_PARALLEL_BATCHES
       && pendingSegments.size > 0) {
       let batch = takeBatch(true);
@@ -1896,8 +2205,8 @@
   }
 
   function scheduleFlush() {
-    if (!isTranslationViewActive()
-      || activeBrandScanCount > 0
+    if (activeBrandScanCount > 0
+      || !isTranslationViewActive()
       || activeBatchCount >= MAX_PARALLEL_BATCHES
       || pendingSegments.size === 0) {
       return;
@@ -1948,9 +2257,11 @@
 
   function clearPending() {
     cancelActiveTranslations();
-    activeBrandScanCount = 0;
     pendingSegments.clear();
     pendingTargetCount = 0;
+    pendingBytes = 0;
+    pendingCharacters = 0;
+    activeBrandScanCount = 0;
     pendingScanRootRefs.clear();
     pendingScanRootLookup = new WeakMap();
     subtreeScanJobs.length = 0;
@@ -1969,6 +2280,7 @@
     clearTimeout(scanTimer);
     clearTimeout(subtreeScanTimer);
     cancelScheduledFlush();
+    cancelShadowDiscovery();
     clearTimeout(recoveryScanTimer);
     clearTimeout(routePolicyTimer);
     clearTimeout(routeScanTimer);
@@ -1986,10 +2298,14 @@
   }
 
   function removeMotion() {
+    for (const timer of motionTimers) {
+      clearTimeout(timer);
+    }
+
+    motionTimers.clear();
     motionHost?.remove();
     motionHost = undefined;
     motionRoot = undefined;
-    activeMotionElementCount = 0;
   }
 
   function processNextRestoreItem(job) {
@@ -2108,7 +2424,10 @@
 
   async function getLanguageSample() {
     const chunks = [];
-    const walker = document.createTreeWalker(document, NodeFilter.SHOW_TEXT);
+    const walker = createScanWalker(
+      document,
+      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT
+    );
     let characters = 0;
     let node = walker.nextNode();
     let visitedNodes = 0;
@@ -2122,7 +2441,9 @@
         && visitedNodes < MAX_LANGUAGE_SAMPLE_NODES
         && processed < MAX_DOCUMENT_SCAN_NODES_PER_SLICE
         && performance.now() - startedAt < SCAN_TIME_BUDGET_MS) {
-        if (node.parentElement && !isBlockedElement(node.parentElement)) {
+        if (node.nodeType === Node.TEXT_NODE
+          && node.parentElement
+          && !isBlockedElement(node.parentElement)) {
           const text = normalizeText(resolveOriginalText(node.nodeValue, textRecords.get(node)));
 
           if (shouldTranslateText(text)) {
@@ -2173,6 +2494,12 @@
     } else if (!shouldMonitor && routePollTimer) {
       clearInterval(routePollTimer);
       routePollTimer = undefined;
+    }
+
+    if (shouldRunShadowDiscovery(isTranslationViewActive(), document.visibilityState)) {
+      scheduleShadowDiscovery();
+    } else {
+      cancelShadowDiscovery();
     }
   }
 
@@ -2247,6 +2574,7 @@
     state.preferredViewMode = next.preferredViewMode;
     state.provider = next.provider;
     state.protectedTerms = next.protectedTerms;
+    protectedTermIndex = undefined;
     state.siteMode = next.siteMode;
     state.sourceLanguage = next.sourceLanguage;
     state.targetLanguage = next.targetLanguage;
@@ -2325,6 +2653,7 @@
   }
 
   async function refreshPolicy() {
+    activePolicyRefreshCount += 1;
     const refreshRevision = ++settingsRefreshRevision;
     policyRevision += 1;
     clearTimeout(routePolicyTimer);
@@ -2352,15 +2681,40 @@
       pauseObserver();
       updateRouteMonitoring();
       reportStatus();
+    } finally {
+      activePolicyRefreshCount = Math.max(0, activePolicyRefreshCount - 1);
+
+      if (activePolicyRefreshCount === 0) {
+        updateRouteMonitoring();
+
+        if (isTranslationViewActive()) {
+          resumeObserver();
+          scanSubtree(document);
+        } else {
+          pauseObserver();
+        }
+
+        reportStatus();
+      }
     }
   }
 
   function checkRouteChange() {
-    if (location.href === currentUrl) {
+    const nextDeclaredLanguage = getDeclaredLanguage();
+    const nextUrl = location.href;
+    const pageContextChange = getPageContextChange(
+      currentUrl,
+      currentDeclaredLanguage,
+      nextUrl,
+      nextDeclaredLanguage
+    );
+
+    if (!pageContextChange.changed) {
       return false;
     }
 
-    currentUrl = location.href;
+    currentDeclaredLanguage = nextDeclaredLanguage;
+    currentUrl = nextUrl;
     policyRevision += 1;
     revision += 1;
     closeSelectionUi();
@@ -2368,6 +2722,7 @@
     routeRescanPending = true;
     brandTerms.clear();
     wholeBrandTerms.clear();
+    protectedTermIndex = undefined;
     refreshPageBrandTerms();
     scheduleCleanup(0);
     state.error = "";
@@ -2408,10 +2763,32 @@
     }
   }
 
+  function handlePageShow() {
+    const wasSuspended = pageSuspended;
+
+    if (!wasSuspended && checkRouteChange()) {
+      return;
+    }
+
+    if (wasSuspended) {
+      checkRouteChange();
+      pageSuspended = false;
+      void refreshPolicy();
+      return;
+    }
+
+    updateRouteMonitoring();
+
+    if (isTranslationViewActive()) {
+      resumeObserver();
+      scanSubtree(document);
+    }
+  }
+
   function handleViewportMovement() {
     closeSelectionUi();
 
-    if (activeMotionElementCount > 0) {
+    if (getActiveMotionElementCount() > 0) {
       removeMotion();
     }
   }
@@ -2805,7 +3182,7 @@
       details.text,
       "original"
     );
-    const { terms, wholeTerms } = getProtectedTermSets();
+    const termIndex = getProtectedTermIndex();
 
     try {
       const response = await api.runtime.sendMessage({
@@ -2819,7 +3196,7 @@
             state.sourceLanguage === "auto" ? state.detectedLanguage : ""
           ),
           kind: "text",
-          protectedTerms: selectProtectedTerms(details.text, terms, "text", wholeTerms)
+          protectedTerms: selectProtectedTerms(details.text, termIndex, "text")
             .slice(0, MAX_PROTECTED_TERMS_PER_ITEM)
         }]
       });
@@ -3191,9 +3568,17 @@
 
   window.addEventListener("hashchange", checkRouteChange);
   window.addEventListener("pagehide", () => {
+    pageSuspended = true;
     closeSelectionUi();
-    cancelActiveTranslations();
+    settingsRefreshRevision += 1;
+    policyRevision += 1;
+    revision += 1;
+    clearPending();
+    pauseObserver();
+    clearInterval(routePollTimer);
+    routePollTimer = undefined;
   });
+  window.addEventListener("pageshow", handlePageShow);
   window.addEventListener("popstate", checkRouteChange);
 
   window.addEventListener("resize", handleViewportMovement, { passive: true });

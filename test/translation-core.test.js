@@ -414,6 +414,33 @@ test("prunes the oldest cache entries by count and serialized byte budget", () =
   assert.equal(result.bytes, estimateCacheBytes(cache));
 });
 
+test("counts the exact serialized cache size including physical storage keys", () => {
+  const prefix = "translationCacheEntryV1:";
+  const cache = {
+    one: { identity: "café", lastUsed: 1, translation: "Перевод" },
+    two: { identity: "two", lastUsed: 2, translation: "二" }
+  };
+  const stored = Object.fromEntries(Object.entries(cache).map(([key, entry]) => [
+    `${prefix}${key}`,
+    entry
+  ]));
+  let incrementalBytes = estimateCacheBytes({}, prefix);
+
+  for (const [key, entry] of Object.entries(cache)) {
+    incrementalBytes = setCacheEntry(
+      Object.fromEntries(Object.entries(cache).slice(0, key === "one" ? 0 : 1)),
+      key,
+      entry,
+      incrementalBytes,
+      prefix
+    );
+  }
+
+  const exactBytes = new TextEncoder().encode(JSON.stringify(stored)).byteLength;
+  assert.equal(estimateCacheBytes(cache, prefix), exactBytes);
+  assert.equal(incrementalBytes, exactBytes);
+});
+
 test("filters non-language strings and preserves boundary whitespace", () => {
   assert.equal(shouldTranslateText("Login"), true);
   assert.equal(shouldTranslateText("https://example.com"), false);

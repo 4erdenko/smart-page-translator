@@ -37,6 +37,35 @@ test("falls back to English UI copy when a locale message is unavailable", () =>
   ]);
 });
 
+test("onboarding disclosure covers provider verification and local caching", () => {
+  assert.match(
+    englishMessages.onboardingPrivacyDescription.message,
+    /key is sent to the selected provider to verify and authorize[\s\S]+cached locally/u
+  );
+  assert.match(
+    russianMessages.onboardingPrivacyDescription.message,
+    /ключ отправляется выбранному сервису для проверки и авторизации[\s\S]+кэшируются локально/iu
+  );
+});
+
+test("provider consent covers automatic and manual page translation", () => {
+  for (const key of ["providerConsentLabel", "onboardingConsentLabel"]) {
+    assert.match(
+      englishMessages[key].message,
+      /Page text translated automatically or manually[\s\S]+short context/iu
+    );
+    assert.match(
+      russianMessages[key].message,
+      /Текст страниц, переводимый автоматически или вручную[\s\S]+краткий контекст/iu
+    );
+  }
+});
+
+test("onboarding consent also covers a previously saved provider key", () => {
+  assert.match(englishMessages.onboardingConsentLabel.message, /my API key will be sent/iu);
+  assert.match(russianMessages.onboardingConsentLabel.message, /мой API-ключ будет отправлен/iu);
+});
+
 test("onboarding blocks navigation actions while checking a provider", () => {
   const source = readFileSync(require.resolve("../src/onboarding/onboarding.js"), "utf8");
   const handlerStart = source.indexOf("function setBusy(busy)");
@@ -45,6 +74,16 @@ test("onboarding blocks navigation actions while checking a provider", () => {
 
   assert.match(handler, /elements\.settingsButton\.disabled = busy;/u);
   assert.match(handler, /elements\.skipButton\.disabled = busy;/u);
+});
+
+test("onboarding resets provider consent when the selected provider changes", () => {
+  const source = readFileSync(require.resolve("../src/onboarding/onboarding.js"), "utf8");
+  const handlerStart = source.indexOf("function renderProvider()");
+  const handlerEnd = source.indexOf("function renderShortcut", handlerStart);
+  const handler = source.slice(handlerStart, handlerEnd);
+
+  assert.match(handler, /elements\.providerConsent\.checked = false;/u);
+  assert.match(handler, /resetCompletion\(\);\s+setBusy\(false\);/u);
 });
 
 test("onboarding waits for saved settings before enabling setup", () => {
@@ -76,6 +115,8 @@ test("keeps shipped locales complete and covers referenced UI messages", () => {
     "../src/onboarding/onboarding.js",
     "../src/options/options.html",
     "../src/options/options.js",
+    "../src/pdf/pdf.html",
+    "../src/pdf/pdf.js",
     "../src/popup/popup.html",
     "../src/popup/popup.js"
   ];

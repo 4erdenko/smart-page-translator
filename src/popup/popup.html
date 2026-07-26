@@ -41,7 +41,7 @@
           </select>
         </label>
 
-        <div class="status" id="statusBox" data-tone="idle">
+        <div class="status" id="statusBox" data-tone="idle" role="status" aria-live="polite">
           <span class="status-dot"></span>
           <div>
             <strong id="statusTitle" data-i18n="ready">Ready</strong>
@@ -71,7 +71,7 @@
         <button id="settingsButton" class="secondary" type="button" data-i18n="settings">Settings</button>
       </div>
 
-      <p class="footnote" id="cacheSummary">0 translations saved locally</p>
+      <p class="footnote" id="cacheSummary"></p>
     </main>
     <script src="../vendor/browser-polyfill.js"></script>
     <script src="../lib/ui-i18n.js"></script>

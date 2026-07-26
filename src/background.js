@@ -3,14 +3,12 @@
   const {
     buildMessages,
     createCacheIdentity,
-    estimateCacheBytes,
+    estimateCacheEntryBytes,
     maskProtectedTerms,
     MAX_CACHE_BYTES,
     normalizeText,
     parseTranslationJson,
-    pruneCacheEntries,
     restoreProtectedTerms,
-    setCacheEntry,
     sha256Hex,
     shouldRefreshCachedTranslation,
     shouldRetryUnchangedTranslation,
@@ -32,10 +30,15 @@
   const LEGACY_DEEPSEEK_KEY = "deepseekApiKeyV1";
   const CACHE_KEY = "translationCacheV1";
   const CACHE_ENTRY_PREFIX = "translationCacheEntryV1:";
+  const CACHE_INDEX_KEY = "translationCacheIndexV1";
+  const CACHE_INDEX_DIRTY_KEY = "translationCacheIndexDirtyV1";
+  const CACHE_INDEX_VERSION = 1;
+  const CACHE_INDEX_DIRTY_BYTES = 1 + estimateCacheEntryBytes("", true, CACHE_INDEX_DIRTY_KEY);
   const CONTEXT_MENU_SELECTION_ID = "translate-selection";
   const CONTEXT_MENU_EDITABLE_ID = "translate-editable";
   const ONBOARDING_VERSION_KEY = "onboardingShownVersion";
-  const SETTINGS_VERSION = 3;
+  const SETTINGS_VERSION = 4;
+  const PROVIDER_DATA_CONSENT_VERSION = 1;
   const DEFAULT_SETTINGS = Object.freeze({
     animationEnabled: true,
     autoTranslateLanguages: [],
@@ -46,6 +49,7 @@
       deepseek: PROVIDERS.deepseek.defaultModel,
       openai: PROVIDERS.openai.defaultModel
     }),
+    providerDataConsentVersion: 0,
     protectedTerms: [],
     siteRules: {},
     siteViewModes: {},
@@ -71,7 +75,10 @@
   const MAX_TRANSLATION_EXPANSION_RATIO = 4;
   const MAX_TRANSLATION_TEXT_CHARACTERS = 16000;
   const MIN_TRANSLATION_TEXT_CHARACTERS = 512;
-  const NETWORK_TIMEOUT_MS = 45000;
+  const CACHE_INDEX_FLUSH_DELAY_MS = 15000;
+  const NETWORK_TOTAL_DEADLINE_MS = 28000;
+  const PROVIDER_CIRCUIT_COOLDOWN_MS = 30000;
+  const PROVIDER_CIRCUIT_FAILURE_THRESHOLD = 3;
   const PRIVILEGED_MESSAGE_TYPES = new Set([
     "clearCache",
     "configureProvider",
@@ -85,14 +92,19 @@
   ]);
   let cachePromise;
   let cacheReleaseTimer;
+  let cacheIndexFlushTimer;
   let cacheWritePromise = Promise.resolve();
   let cacheGeneration = 0;
   let cacheEntryCount = 0;
   let cacheEstimatedBytes = 2;
   let activeRequestCount = 0;
+  let settingsInitialized = false;
+  let settingsInitializationPromise;
+  let settingsWritePromise = Promise.resolve();
   const activeTranslationRequests = new Set();
   const cacheStates = new WeakMap();
   const inFlightTranslations = new Map();
+  const providerCircuitStates = new Map();
   const providerModelCache = new Map();
   const requestWaiters = [];
   const storageAccessPromise = restrictLocalStorageAccess();
@@ -307,6 +319,9 @@
       defaultViewMode: normalizeViewMode(value?.defaultViewMode),
       provider,
       providerModels,
+      providerDataConsentVersion: value?.providerDataConsentVersion === PROVIDER_DATA_CONSENT_VERSION
+        ? PROVIDER_DATA_CONSENT_VERSION
+        : 0,
       protectedTerms: normalizeProtectedTerms(value?.protectedTerms),
       siteRules: normalizeSiteRules(value?.siteRules, value?.enabledSites),
       siteViewModes: normalizeSiteViewModes(value?.siteViewModes),
@@ -316,31 +331,101 @@
     };
   }
 
-  async function getSettings() {
+  async function readSettings(migrate = false) {
     const stored = await api.storage.local.get(SETTINGS_KEY);
     const current = stored[SETTINGS_KEY];
     const currentVersion = Number(current?.version || 0);
+    let hasExistingProviderKey = false;
+
+    if (!current || currentVersion < SETTINGS_VERSION) {
+      const providerStorage = await api.storage.local.get([
+        PROVIDER_KEYS_KEY,
+        LEGACY_DEEPSEEK_KEY
+      ]);
+      const storedProviderKeys = providerStorage[PROVIDER_KEYS_KEY];
+      hasExistingProviderKey = Boolean(
+        providerStorage[LEGACY_DEEPSEEK_KEY]
+        || storedProviderKeys && Object.values(storedProviderKeys).some(Boolean)
+      );
+    }
     const migrated = current && currentVersion < SETTINGS_VERSION
       ? {
         ...current,
         cacheMaxEntries: currentVersion < 2 && Number(current.cacheMaxEntries) === 8000
           ? DEFAULT_SETTINGS.cacheMaxEntries
           : current.cacheMaxEntries,
+        providerDataConsentVersion: hasExistingProviderKey
+          ? PROVIDER_DATA_CONSENT_VERSION
+          : current.providerDataConsentVersion,
         version: SETTINGS_VERSION
       }
       : current;
-    const settings = sanitizeSettings(migrated ?? DEFAULT_SETTINGS);
+    const settings = sanitizeSettings(migrated ?? {
+      ...DEFAULT_SETTINGS,
+      providerDataConsentVersion: hasExistingProviderKey ? PROVIDER_DATA_CONSENT_VERSION : 0
+    });
 
-    if (current && currentVersion < SETTINGS_VERSION) {
+    if (migrate && current && currentVersion < SETTINGS_VERSION) {
       await api.storage.local.set({ [SETTINGS_KEY]: settings });
     }
 
     return settings;
   }
 
-  async function saveSettings(settings) {
+  function queueSettingsWrite(operation) {
+    const result = settingsWritePromise
+      .catch(() => undefined)
+      .then(operation);
+    settingsWritePromise = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  function initializeSettings() {
+    if (!settingsInitializationPromise) {
+      const initialization = queueSettingsWrite(() => readSettings(true))
+        .then((settings) => {
+          settingsInitialized = true;
+          return settings;
+        })
+        .catch((error) => {
+          if (settingsInitializationPromise === initialization) {
+            settingsInitializationPromise = undefined;
+          }
+
+          throw error;
+        });
+      settingsInitializationPromise = initialization;
+    }
+
+    return settingsInitializationPromise;
+  }
+
+  function getSettings() {
+    return settingsInitialized ? readSettings() : initializeSettings();
+  }
+
+  function runSettingsWrite(operation) {
+    return initializeSettings().then(() => queueSettingsWrite(operation));
+  }
+
+  async function writeSettings(settings) {
     const sanitized = sanitizeSettings(settings);
     await api.storage.local.set({ [SETTINGS_KEY]: sanitized });
+    return sanitized;
+  }
+
+  async function saveSettings(settings) {
+    const sanitized = await runSettingsWrite(() => writeSettings(settings));
+    await broadcastSettings();
+    return sanitized;
+  }
+
+  async function mutateSettings(mutator) {
+    const sanitized = await runSettingsWrite(async () => {
+      const settings = await getSettings();
+      const nextSettings = await mutator(settings);
+      return writeSettings(nextSettings ?? settings);
+    });
     await broadcastSettings();
     return sanitized;
   }
@@ -369,6 +454,18 @@
     return (await getProviderKeys())[provider];
   }
 
+  function assertProviderDataConsent(consent, version) {
+    if (consent !== true || version !== PROVIDER_DATA_CONSENT_VERSION) {
+      throw new Error("Confirm the current provider data disclosure before contacting a translation provider.");
+    }
+  }
+
+  function assertStoredProviderDataConsent(settings) {
+    if (settings.providerDataConsentVersion !== PROVIDER_DATA_CONSENT_VERSION) {
+      throw new Error("Provider data consent is required. Open the extension settings.");
+    }
+  }
+
   function scheduleCacheRelease() {
     clearTimeout(cacheReleaseTimer);
     cacheReleaseTimer = setTimeout(() => {
@@ -385,6 +482,10 @@
     return `${CACHE_ENTRY_PREFIX}${cacheKey}`;
   }
 
+  function isCacheKey(value) {
+    return /^[a-z0-9_-]{1,128}$/iu.test(value);
+  }
+
   async function removeStorageKeys(keys) {
     for (let index = 0; index < keys.length; index += 500) {
       await api.storage.local.remove(keys.slice(index, index + 500));
@@ -394,59 +495,247 @@
   async function getCache() {
     if (!cachePromise) {
       const generation = cacheGeneration;
-      cachePromise = api.storage.local.get(null).then(async (stored) => {
+      const pendingCache = api.storage.local.get([
+        CACHE_INDEX_KEY,
+        CACHE_INDEX_DIRTY_KEY,
+        CACHE_KEY
+      ]).then(async (indexedStorage) => {
+        const storedIndex = indexedStorage[CACHE_INDEX_DIRTY_KEY]
+          ? null
+          : normalizeCacheIndex(indexedStorage[CACHE_INDEX_KEY]);
+        const cache = {};
+
+        if (storedIndex) {
+          initializeCacheState(cache, storedIndex, generation);
+
+          if (Object.hasOwn(indexedStorage, CACHE_KEY)) {
+            cacheWritePromise = cacheWritePromise
+              .catch(() => undefined)
+              .then(async () => {
+                if (generation === cacheGeneration) {
+                  await removeStorageKeys([CACHE_KEY]);
+                }
+              });
+            await cacheWritePromise;
+          }
+
+          return cache;
+        }
+
+        const stored = await api.storage.local.get(null);
         const legacyCache = stored[CACHE_KEY];
-        const normalizedCache = legacyCache && typeof legacyCache === "object" && !Array.isArray(legacyCache)
-          ? { ...legacyCache }
+        const hasLegacyCache = Boolean(
+          legacyCache && typeof legacyCache === "object" && !Array.isArray(legacyCache)
+        );
+        const normalizedCache = hasLegacyCache
+          ? Object.fromEntries(Object.entries(legacyCache).filter(([key]) => isCacheKey(key)))
           : {};
 
         for (const [key, entry] of Object.entries(stored)) {
-          if (key.startsWith(CACHE_ENTRY_PREFIX) && key.length > CACHE_ENTRY_PREFIX.length) {
-            normalizedCache[key.slice(CACHE_ENTRY_PREFIX.length)] = entry;
+          const cacheKey = key.startsWith(CACHE_ENTRY_PREFIX)
+            ? key.slice(CACHE_ENTRY_PREFIX.length)
+            : "";
+
+          if (isCacheKey(cacheKey)) {
+            normalizedCache[cacheKey] = entry;
           }
         }
 
-        cacheStates.set(normalizedCache, {
-          dirtyKeys: new Set(),
-          generation,
-          removedKeys: new Set()
-        });
-
-        if (generation === cacheGeneration) {
-          cacheEntryCount = Object.keys(normalizedCache).length;
-          cacheEstimatedBytes = estimateCacheBytes(normalizedCache);
-        }
-
-        if (legacyCache && typeof legacyCache === "object" && !Array.isArray(legacyCache)) {
-          const migratedEntries = Object.fromEntries(Object.entries(normalizedCache).map(([key, entry]) => [
+        const index = createCacheIndex(normalizedCache);
+        Object.assign(cache, normalizedCache);
+        initializeCacheState(cache, index, generation);
+        const migratedEntries = hasLegacyCache
+          ? Object.fromEntries(Object.entries(normalizedCache).map(([key, entry]) => [
             getCacheEntryStorageKey(key),
             entry
-          ]));
-          cacheWritePromise = cacheWritePromise
-            .catch(() => undefined)
-            .then(async () => {
-              if (generation !== cacheGeneration) {
-                return;
-              }
+          ]))
+          : {};
+        cacheWritePromise = cacheWritePromise
+          .catch(() => undefined)
+          .then(async () => {
+            if (generation !== cacheGeneration) {
+              return;
+            }
 
-              if (Object.keys(migratedEntries).length > 0) {
-                await api.storage.local.set(migratedEntries);
-              }
-
-              if (generation === cacheGeneration) {
-                await removeStorageKeys([CACHE_KEY]);
-              }
+            await api.storage.local.set({
+              ...migratedEntries,
+              [CACHE_INDEX_KEY]: serializeCacheIndex(index)
             });
-          await cacheWritePromise;
+
+            if (generation === cacheGeneration && Object.hasOwn(stored, CACHE_KEY)) {
+              await removeStorageKeys([CACHE_KEY]);
+            }
+
+            if (generation === cacheGeneration) {
+              await removeStorageKeys([CACHE_INDEX_DIRTY_KEY]);
+            }
+          });
+        await cacheWritePromise;
+        return cache;
+      }).catch((error) => {
+        if (cachePromise === pendingCache) {
+          cachePromise = undefined;
         }
 
-        return normalizedCache;
+        throw error;
       });
+      cachePromise = pendingCache;
     }
 
     scheduleCacheRelease();
 
     return cachePromise;
+  }
+
+  function createCacheIndex(cache) {
+    return {
+      entries: Object.fromEntries(Object.entries(cache).map(([key, entry]) => [
+        key,
+        {
+          bytes: estimateCacheEntryBytes(key, entry, CACHE_ENTRY_PREFIX),
+          lastUsed: Number(entry?.lastUsed || 0)
+        }
+      ]))
+    };
+  }
+
+  function normalizeCacheIndex(value) {
+    if (value?.version !== CACHE_INDEX_VERSION
+      || !value.entries
+      || typeof value.entries !== "object"
+      || Array.isArray(value.entries)) {
+      return null;
+    }
+
+    const entries = {};
+
+    for (const [key, metadata] of Object.entries(value.entries)) {
+      if (!isCacheKey(key)
+        || !Number.isSafeInteger(metadata?.bytes)
+        || metadata.bytes <= 0
+        || !Number.isFinite(Number(metadata.lastUsed))) {
+        return null;
+      }
+
+      entries[key] = {
+        bytes: metadata.bytes,
+        lastUsed: Number(metadata.lastUsed)
+      };
+    }
+
+    return { entries };
+  }
+
+  function serializeCacheIndex(index) {
+    return {
+      entries: Object.fromEntries(Object.entries(index.entries).map(([key, metadata]) => [
+        key,
+        { ...metadata }
+      ])),
+      version: CACHE_INDEX_VERSION
+    };
+  }
+
+  function getIndexedCacheBytes(index) {
+    const metadata = Object.values(index.entries);
+    return 2
+      + metadata.length
+      + metadata.reduce((total, entry) => total + entry.bytes, 0)
+      + getCacheIndexStorageBytes(index);
+  }
+
+  function getCacheIndexStorageBytes(index) {
+    return estimateCacheEntryBytes("", serializeCacheIndex(index), CACHE_INDEX_KEY);
+  }
+
+  function updateCacheIndexMetadata(state, key, metadata) {
+    const previous = state.index.entries[key];
+    const previousBytes = previous ? estimateCacheEntryBytes(key, previous) : 0;
+    const separatorBytes = !previous && cacheEntryCount > 0 ? 1 : 0;
+    const nextBytes = estimateCacheEntryBytes(key, metadata);
+    state.index.entries[key] = metadata;
+    return nextBytes - previousBytes + separatorBytes;
+  }
+
+  function removeCacheIndexMetadata(state, key) {
+    const metadata = state.index.entries[key];
+
+    if (!metadata) {
+      return 0;
+    }
+
+    const separatorBytes = cacheEntryCount > 1 ? 1 : 0;
+    const difference = -estimateCacheEntryBytes(key, metadata) - separatorBytes;
+    delete state.index.entries[key];
+    return difference;
+  }
+
+  function initializeCacheState(cache, index, generation) {
+    cacheStates.set(cache, {
+      dirtyKeys: new Set(),
+      dirtyMarkerPersisted: false,
+      generation,
+      index,
+      indexDirty: false,
+      persistedIndexBytes: getCacheIndexStorageBytes(index),
+      removedKeys: new Set()
+    });
+
+    if (generation === cacheGeneration) {
+      cacheEntryCount = Object.keys(index.entries).length;
+      cacheEstimatedBytes = getIndexedCacheBytes(index);
+    }
+  }
+
+  async function loadCacheEntries(cache, keys) {
+    const state = cacheStates.get(cache);
+
+    if (state?.generation !== cacheGeneration) {
+      return;
+    }
+
+    const cacheKeys = [...new Set(keys)].filter((key) => (
+      Object.hasOwn(state.index.entries, key) && !Object.hasOwn(cache, key)
+    ));
+
+    if (cacheKeys.length === 0) {
+      return;
+    }
+
+    const storageKeys = cacheKeys.map(getCacheEntryStorageKey);
+    const stored = await api.storage.local.get(storageKeys);
+
+    if (state.generation !== cacheGeneration) {
+      return;
+    }
+
+    for (const key of cacheKeys) {
+      const metadata = state.index.entries[key];
+
+      if (!metadata || Object.hasOwn(cache, key)) {
+        continue;
+      }
+
+      const storageKey = getCacheEntryStorageKey(key);
+
+      if (!Object.hasOwn(stored, storageKey)) {
+        removeIndexedCacheEntry(cache, key, false);
+        continue;
+      }
+
+      const entry = stored[storageKey];
+      const bytes = estimateCacheEntryBytes(key, entry, CACHE_ENTRY_PREFIX);
+      cache[key] = entry;
+
+      if (metadata.bytes !== bytes || metadata.lastUsed !== Number(entry?.lastUsed || 0)) {
+        const indexDifference = updateCacheIndexMetadata(state, key, {
+          bytes,
+          lastUsed: Number(entry?.lastUsed || 0)
+        });
+        cacheEstimatedBytes += bytes - metadata.bytes + indexDifference;
+        state.indexDirty = true;
+      }
+    }
   }
 
   function pruneCache(cache, maximumEntries) {
@@ -456,25 +745,60 @@
       return 0;
     }
 
-    if (cacheEntryCount <= maximumEntries && cacheEstimatedBytes <= MAX_CACHE_BYTES) {
+    if (isCacheWithinLimits(state, maximumEntries)) {
       return 0;
     }
 
-    const result = pruneCacheEntries(
-      cache,
-      maximumEntries,
-      MAX_CACHE_BYTES,
-      cacheEstimatedBytes
-    );
+    const entries = Object.entries(state.index.entries)
+      .sort((left, right) => left[1].lastUsed - right[1].lastUsed);
+    let removedEntries = 0;
 
-    for (const key of result.removedKeys) {
-      state.dirtyKeys.delete(key);
+    for (const [key] of entries) {
+      if (isCacheWithinLimits(state, maximumEntries)) {
+        break;
+      }
+
+      removeIndexedCacheEntry(cache, key);
+      removedEntries += 1;
+    }
+
+    return removedEntries;
+  }
+
+  function isCacheWithinLimits(state, maximumEntries) {
+    return cacheEntryCount <= maximumEntries
+      && getPhysicalCacheBytes(state) <= MAX_CACHE_BYTES;
+  }
+
+  function getPhysicalCacheBytes(state) {
+    const currentIndexBytes = getCacheIndexStorageBytes(state.index);
+    const indexBytes = Math.max(currentIndexBytes, state.persistedIndexBytes);
+    const pendingMarkerBytes = state.indexDirty ? CACHE_INDEX_DIRTY_BYTES : 0;
+    return cacheEstimatedBytes - currentIndexBytes + indexBytes + pendingMarkerBytes;
+  }
+
+  function removeIndexedCacheEntry(cache, key, removeStorage = true) {
+    const state = cacheStates.get(cache);
+    const metadata = state?.index.entries[key];
+
+    if (state?.generation !== cacheGeneration || !metadata) {
+      return;
+    }
+
+    delete cache[key];
+    const indexDifference = removeCacheIndexMetadata(state, key);
+    state.dirtyKeys.delete(key);
+    state.indexDirty = true;
+
+    if (removeStorage) {
       state.removedKeys.add(key);
     }
 
-    cacheEntryCount = Math.max(0, cacheEntryCount - result.removedEntries);
-    cacheEstimatedBytes = result.bytes;
-    return result.removedEntries;
+    cacheEntryCount -= 1;
+    cacheEstimatedBytes = Math.max(
+      getIndexedCacheBytes({ entries: {} }),
+      cacheEstimatedBytes - metadata.bytes - 1 + indexDifference
+    );
   }
 
   function markCacheEntryDirty(cache, key) {
@@ -485,13 +809,87 @@
     }
 
     state.removedKeys.delete(key);
+    const entry = cache[key];
+    const previous = state.index.entries[key];
+    const bytes = estimateCacheEntryBytes(key, entry, CACHE_ENTRY_PREFIX);
+    const indexDifference = updateCacheIndexMetadata(state, key, {
+      bytes,
+      lastUsed: Number(entry?.lastUsed || 0)
+    });
+
+    if (previous) {
+      cacheEstimatedBytes += bytes - previous.bytes + indexDifference;
+    } else {
+      cacheEstimatedBytes += bytes + 1 + indexDifference;
+      cacheEntryCount += 1;
+    }
+    state.indexDirty = true;
     state.dirtyKeys.add(key);
   }
 
   function hasPendingCacheChanges(cache) {
     const state = cacheStates.get(cache);
     return state?.generation === cacheGeneration
-      && (state.dirtyKeys.size > 0 || state.removedKeys.size > 0);
+      && (state.indexDirty || state.dirtyKeys.size > 0 || state.removedKeys.size > 0);
+  }
+
+  function scheduleCacheIndexFlush(cache) {
+    clearTimeout(cacheIndexFlushTimer);
+    cacheIndexFlushTimer = setTimeout(() => {
+      cacheIndexFlushTimer = undefined;
+      void flushCacheIndex(cache).catch(() => undefined);
+    }, CACHE_INDEX_FLUSH_DELAY_MS);
+  }
+
+  function flushCacheIndex(cache) {
+    const state = cacheStates.get(cache);
+    const generation = state?.generation;
+
+    if (generation !== cacheGeneration || !state.indexDirty) {
+      return cacheWritePromise;
+    }
+
+    cacheWritePromise = cacheWritePromise
+      .catch(() => undefined)
+      .then(async () => {
+        if (generation !== cacheGeneration || !state.indexDirty) {
+          return;
+        }
+
+        if (state.dirtyKeys.size > 0 || state.removedKeys.size > 0) {
+          scheduleCacheIndexFlush(cache);
+          return;
+        }
+
+        const storedIndex = serializeCacheIndex(state.index);
+        const storedIndexBytes = getCacheIndexStorageBytes(state.index);
+        await api.storage.local.set({ [CACHE_INDEX_KEY]: storedIndex });
+
+        if (generation !== cacheGeneration) {
+          return;
+        }
+
+        state.persistedIndexBytes = storedIndexBytes;
+
+        if (state.dirtyKeys.size > 0 || state.removedKeys.size > 0) {
+          scheduleCacheIndexFlush(cache);
+          return;
+        }
+
+        if (state.dirtyMarkerPersisted) {
+          await removeStorageKeys([CACHE_INDEX_DIRTY_KEY]);
+          state.dirtyMarkerPersisted = false;
+        }
+
+        if (state.dirtyKeys.size > 0 || state.removedKeys.size > 0) {
+          state.indexDirty = true;
+          scheduleCacheIndexFlush(cache);
+          return;
+        }
+
+        state.indexDirty = false;
+      });
+    return cacheWritePromise;
   }
 
   function saveCache(cache, maximumEntries) {
@@ -520,15 +918,32 @@
         state.removedKeys.clear();
 
         try {
-          if (Object.keys(dirtyEntries).length > 0) {
+          if (dirtyKeys.length === 0 && removedCacheKeys.length === 0) {
+            scheduleCacheIndexFlush(cache);
+            return;
+          }
+
+          if (!state.dirtyMarkerPersisted) {
+            await api.storage.local.set({ [CACHE_INDEX_DIRTY_KEY]: true });
+
+            if (generation === cacheGeneration) {
+              state.dirtyMarkerPersisted = true;
+            }
+          }
+
+          if (removedKeys.length > 0) {
+            await removeStorageKeys(removedKeys);
+          }
+
+          if (generation === cacheGeneration && Object.keys(dirtyEntries).length > 0) {
             await api.storage.local.set(dirtyEntries);
           }
 
-          if (generation === cacheGeneration && removedKeys.length > 0) {
-            await removeStorageKeys(removedKeys);
-          }
+          scheduleCacheIndexFlush(cache);
         } catch (error) {
           if (generation === cacheGeneration) {
+            state.indexDirty = true;
+
             for (const key of dirtyKeys) {
               if (Object.hasOwn(cache, key)) {
                 state.dirtyKeys.add(key);
@@ -558,24 +973,100 @@
     }
   }
 
+  function getRetryAfterMilliseconds(response) {
+    const value = response?.headers?.get?.("retry-after");
+
+    if (!value) {
+      return undefined;
+    }
+
+    const seconds = Number(value);
+
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.round(seconds * 1000);
+    }
+
+    const date = Date.parse(value);
+    return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+  }
+
+  function getRetryDelayMilliseconds(attempt, retryAfterMilliseconds) {
+    const baseDelay = retryAfterMilliseconds ?? 700 * (attempt + 1);
+    const maximumJitter = Math.min(250, Math.max(25, baseDelay * 0.1));
+    const jitter = 1 + Math.floor(Math.random() * maximumJitter);
+    return baseDelay + jitter;
+  }
+
+  function assertProviderCircuitClosed(providerOrigin) {
+    const state = providerCircuitStates.get(providerOrigin);
+
+    if (!state) {
+      return;
+    }
+
+    if (!state.openedUntil) {
+      return;
+    }
+
+    if (state.openedUntil <= Date.now()) {
+      providerCircuitStates.delete(providerOrigin);
+      return;
+    }
+
+    const error = new Error("The translation provider is temporarily unavailable after repeated failures. Retry shortly.");
+    error.retryable = false;
+    error.providerCircuitOpen = true;
+    throw error;
+  }
+
+  function recordProviderCircuitFailure(providerOrigin) {
+    const current = providerCircuitStates.get(providerOrigin);
+    const failures = Number(current?.failures || 0) + 1;
+    providerCircuitStates.set(providerOrigin, {
+      failures,
+      openedUntil: failures >= PROVIDER_CIRCUIT_FAILURE_THRESHOLD
+        ? Date.now() + PROVIDER_CIRCUIT_COOLDOWN_MS
+        : 0
+    });
+  }
+
+  function resetProviderCircuit(providerOrigin) {
+    providerCircuitStates.delete(providerOrigin);
+  }
+
   async function fetchJsonWithRetry(
     url,
     options,
     providerLabel = "Translation provider",
     beforeAttempt,
-    signal
+    signal,
+    deadline = Date.now() + NETWORK_TOTAL_DEADLINE_MS
   ) {
     let lastError;
+    const providerOrigin = new URL(url).origin;
+    assertProviderCircuitClosed(providerOrigin);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       throwIfCancelled(signal);
+      assertProviderCircuitClosed(providerOrigin);
+      const remainingMilliseconds = deadline - Date.now();
+
+      if (remainingMilliseconds <= 0) {
+        if (lastError) {
+          recordProviderCircuitFailure(providerOrigin);
+        }
+
+        throw lastError || new Error(`${providerLabel} request deadline expired.`);
+      }
+
       const controller = new AbortController();
       let timedOut = false;
+      let retryAfterMilliseconds;
       const handleAbort = () => controller.abort();
       const timeout = setTimeout(() => {
         timedOut = true;
         controller.abort();
-      }, NETWORK_TIMEOUT_MS);
+      }, remainingMilliseconds);
       signal?.addEventListener("abort", handleAbort, { once: true });
 
       try {
@@ -584,25 +1075,35 @@
         const response = await fetch(url, { ...options, signal: controller.signal });
 
         if (response.ok) {
+          resetProviderCircuit(providerOrigin);
           return await response.json();
         }
 
         if (response.status !== 429 && response.status < 500) {
+          resetProviderCircuit(providerOrigin);
           const error = new Error(await readApiError(response, providerLabel));
           error.retryable = false;
           throw error;
         }
 
+        retryAfterMilliseconds = getRetryAfterMilliseconds(response);
         lastError = new Error(`${providerLabel} temporarily returned HTTP ${response.status}.`);
+        lastError.retryable = true;
       } catch (error) {
         throwIfCancelled(signal);
         lastError = error?.name === "AbortError" && timedOut
           ? new Error(`${providerLabel} request timed out.`)
           : error;
+        lastError.retryable = lastError?.retryable !== false
+          && /temporarily|timed out|network|fetch|429|5\d\d/iu.test(String(lastError?.message));
 
         if (attempt === 2
           || lastError?.retryable === false
-          || !/temporarily|timed out|network|fetch|429|5\d\d/iu.test(String(lastError?.message))) {
+          || !lastError?.retryable) {
+          if (lastError?.retryable) {
+            recordProviderCircuitFailure(providerOrigin);
+          }
+
           throw lastError;
         }
       } finally {
@@ -610,7 +1111,19 @@
         signal?.removeEventListener("abort", handleAbort);
       }
 
-      await delay(700 * (attempt + 1), signal);
+      if (attempt === 2) {
+        recordProviderCircuitFailure(providerOrigin);
+        throw lastError;
+      }
+
+      const retryDelay = getRetryDelayMilliseconds(attempt, retryAfterMilliseconds);
+
+      if (Date.now() + retryDelay >= deadline) {
+        recordProviderCircuitFailure(providerOrigin);
+        throw lastError || new Error(`${providerLabel} retry deadline expired.`);
+      }
+
+      await delay(retryDelay, signal);
     }
 
     throw lastError || new Error(`${providerLabel} request failed.`);
@@ -622,7 +1135,8 @@
     apiKey,
     attemptBudget,
     notifyTranslationPending,
-    signal
+    signal,
+    deadline
   ) {
     const protectedItems = items.map((item) => {
       const protection = maskProtectedTerms(item.text, item.protectedTerms);
@@ -666,13 +1180,27 @@
       }
 
       attemptBudget.remaining -= 1;
-    }, signal);
+    }, signal, deadline);
     const content = body?.choices?.[0]?.message?.content;
     const finishReason = body?.choices?.[0]?.finish_reason;
+
+    if (finishReason === "content_filter") {
+      const error = new Error(`${providerDefinition.label} blocked this translation with its content filter.`);
+      error.retryable = false;
+      throw error;
+    }
 
     if (finishReason === "length") {
       const error = new Error(`${providerDefinition.label} response reached its output limit.`);
       error.canSplitBatch = true;
+      throw error;
+    }
+
+    if (finishReason !== "stop") {
+      const error = new Error(
+        `${providerDefinition.label} returned a transient finish reason: ${String(finishReason || "missing")}.`
+      );
+      error.canRetryFinishReason = true;
       throw error;
     }
 
@@ -720,7 +1248,8 @@
     attemptBudget,
     notifyTranslationPending,
     signal,
-    emptyResponseRetries = 1
+    deadline,
+    transientResponseRetries = 1
   ) {
     try {
       return await withRequestSlot(() => requestTranslations(
@@ -729,10 +1258,12 @@
         apiKey,
         attemptBudget,
         notifyTranslationPending,
-        signal
+        signal,
+        deadline
       ), signal);
     } catch (error) {
-      if (error?.canRetryEmptyResponse && emptyResponseRetries > 0) {
+      if ((error?.canRetryEmptyResponse || error?.canRetryFinishReason)
+        && transientResponseRetries > 0) {
         return requestTranslationsResilient(
           items,
           settings,
@@ -740,7 +1271,8 @@
           attemptBudget,
           notifyTranslationPending,
           signal,
-          emptyResponseRetries - 1
+          deadline,
+          transientResponseRetries - 1
         );
       }
 
@@ -756,7 +1288,8 @@
           apiKey,
           attemptBudget,
           notifyTranslationPending,
-          signal
+          signal,
+          deadline
         ),
         requestTranslationsResilient(
           items.slice(midpoint),
@@ -764,7 +1297,8 @@
           apiKey,
           attemptBudget,
           notifyTranslationPending,
-          signal
+          signal,
+          deadline
         )
       ]);
 
@@ -795,7 +1329,8 @@
     apiKey,
     attemptBudget,
     notifyTranslationPending,
-    signal
+    signal,
+    deadline
   ) {
     throwIfCancelled(signal);
     const candidates = items.filter((item) => shouldRetryUnchangedTranslation(
@@ -819,7 +1354,7 @@
     const retries = await Promise.allSettled(batches.map((batch) => requestTranslationsResilient(batch, {
       ...settings,
       sourceLanguage: "auto"
-    }, apiKey, attemptBudget, notifyTranslationPending, signal)));
+    }, apiKey, attemptBudget, notifyTranslationPending, signal, deadline)));
     throwIfCancelled(signal);
 
     batches.forEach((batch, index) => {
@@ -911,7 +1446,8 @@
     generation,
     notifyTranslationPending,
     signal,
-    persistCache
+    persistCache,
+    deadline
   ) {
     throwIfCancelled(signal);
     const provider = normalizeProvider(settings.provider);
@@ -921,6 +1457,7 @@
       throw new Error(`No ${PROVIDERS[provider].label} API key is configured. Open the extension settings.`);
     }
 
+    assertStoredProviderDataConsent(settings);
     const attemptBudget = { remaining: MAX_PROVIDER_ATTEMPTS_PER_BATCH };
     let motionStarted = false;
     const startTranslationMotion = async () => {
@@ -938,14 +1475,16 @@
         apiKey,
         attemptBudget,
         startTranslationMotion,
-        signal
+        signal,
+        deadline
       ),
       items,
       settings,
       apiKey,
       attemptBudget,
       startTranslationMotion,
-      signal
+      signal,
+      deadline
     );
 
     throwIfCancelled(signal);
@@ -965,11 +1504,7 @@
           cacheEntry.unchangedTranslationRetryAfter = Date.now() + UNCHANGED_TRANSLATION_RETRY_MS;
         }
 
-        if (!Object.hasOwn(cache, item.cacheKey)) {
-          cacheEntryCount += 1;
-        }
-
-        cacheEstimatedBytes = setCacheEntry(cache, item.cacheKey, cacheEntry, cacheEstimatedBytes);
+        cache[item.cacheKey] = cacheEntry;
         markCacheEntryDirty(cache, item.cacheKey);
       }
 
@@ -992,6 +1527,7 @@
     persistCache
   ) {
     throwIfCancelled(signal);
+    const deadline = Date.now() + NETWORK_TOTAL_DEADLINE_MS;
     const items = validateItems(rawItems);
     const storedSettings = await getSettings();
     throwIfCancelled(signal);
@@ -1027,6 +1563,12 @@
       };
     }));
     throwIfCancelled(signal);
+
+    if (persistCache) {
+      await loadCacheEntries(cache, prepared.map(({ cacheKey }) => cacheKey));
+      throwIfCancelled(signal);
+    }
+
     const translations = new Map();
     const missing = [];
     let cacheHits = 0;
@@ -1043,10 +1585,10 @@
         if (persistCache
           && cacheStates.get(cache)?.generation === cacheGeneration
           && now - Number(cached.lastUsed || 0) >= 3600000) {
-          cacheEstimatedBytes = setCacheEntry(cache, item.cacheKey, {
+          cache[item.cacheKey] = {
             ...cached,
             lastUsed: now
-          }, cacheEstimatedBytes);
+          };
           markCacheEntryDirty(cache, item.cacheKey);
           cacheMetadataChanged = true;
         }
@@ -1084,7 +1626,8 @@
           generation,
           notifyTranslationPending,
           signal,
-          persistCache
+          persistCache,
+          deadline
         );
 
         for (const item of ownedItems) {
@@ -1149,7 +1692,10 @@
     ]);
     const cache = includeCacheEntries ? await getCache() : undefined;
     const prunedEntries = includeCacheEntries ? pruneCache(cache, settings.cacheMaxEntries) : 0;
-    const cacheBytes = includeCacheEntries ? cacheEstimatedBytes : undefined;
+    const cacheState = includeCacheEntries ? cacheStates.get(cache) : undefined;
+    const cacheBytes = includeCacheEntries
+      ? getPhysicalCacheBytes(cacheState)
+      : undefined;
 
     if (prunedEntries > 0) {
       await saveCache(cache, settings.cacheMaxEntries);
@@ -1182,6 +1728,7 @@
         defaultViewMode: settings.defaultViewMode,
         model: getSelectedModel(settings),
         provider: settings.provider,
+        providerDataConsentVersion: settings.providerDataConsentVersion,
         providerModels: settings.providerModels,
         protectedTerms: settings.protectedTerms,
         siteRules: settings.siteRules,
@@ -1223,51 +1770,51 @@
   }
 
   async function updateSettings(patch) {
-    const settings = await getSettings();
+    return mutateSettings((settings) => {
+      if (patch && Object.hasOwn(patch, "animationEnabled")) {
+        settings.animationEnabled = patch.animationEnabled;
+      }
 
-    if (patch && Object.hasOwn(patch, "animationEnabled")) {
-      settings.animationEnabled = patch.animationEnabled;
-    }
+      if (patch && Object.hasOwn(patch, "autoTranslateLanguages")) {
+        settings.autoTranslateLanguages = patch.autoTranslateLanguages;
+      }
 
-    if (patch && Object.hasOwn(patch, "autoTranslateLanguages")) {
-      settings.autoTranslateLanguages = patch.autoTranslateLanguages;
-    }
+      if (patch && Object.hasOwn(patch, "cacheMaxEntries")) {
+        settings.cacheMaxEntries = patch.cacheMaxEntries;
+      }
 
-    if (patch && Object.hasOwn(patch, "cacheMaxEntries")) {
-      settings.cacheMaxEntries = patch.cacheMaxEntries;
-    }
+      if (patch && Object.hasOwn(patch, "defaultViewMode")) {
+        settings.defaultViewMode = patch.defaultViewMode;
+      }
 
-    if (patch && Object.hasOwn(patch, "defaultViewMode")) {
-      settings.defaultViewMode = patch.defaultViewMode;
-    }
+      if (patch && Object.hasOwn(patch, "provider")) {
+        settings.provider = patch.provider;
+      }
 
-    if (patch && Object.hasOwn(patch, "provider")) {
-      settings.provider = patch.provider;
-    }
+      if (patch && Object.hasOwn(patch, "providerModels")) {
+        settings.providerModels = patch.providerModels;
+      } else if (patch && Object.hasOwn(patch, "model")) {
+        settings.providerModels[settings.provider] = patch.model;
+      }
 
-    if (patch && Object.hasOwn(patch, "providerModels")) {
-      settings.providerModels = patch.providerModels;
-    } else if (patch && Object.hasOwn(patch, "model")) {
-      settings.providerModels[settings.provider] = patch.model;
-    }
+      if (patch && Object.hasOwn(patch, "protectedTerms")) {
+        settings.protectedTerms = patch.protectedTerms;
+      }
 
-    if (patch && Object.hasOwn(patch, "protectedTerms")) {
-      settings.protectedTerms = patch.protectedTerms;
-    }
+      if (patch && Object.hasOwn(patch, "siteRules")) {
+        settings.siteRules = patch.siteRules;
+      }
 
-    if (patch && Object.hasOwn(patch, "siteRules")) {
-      settings.siteRules = patch.siteRules;
-    }
+      if (patch && Object.hasOwn(patch, "sourceLanguage")) {
+        settings.sourceLanguage = patch.sourceLanguage;
+      }
 
-    if (patch && Object.hasOwn(patch, "sourceLanguage")) {
-      settings.sourceLanguage = patch.sourceLanguage;
-    }
+      if (patch && Object.hasOwn(patch, "targetLanguage")) {
+        settings.targetLanguage = patch.targetLanguage;
+      }
 
-    if (patch && Object.hasOwn(patch, "targetLanguage")) {
-      settings.targetLanguage = patch.targetLanguage;
-    }
-
-    return saveSettings(settings);
+      return settings;
+    });
   }
 
   async function validateSitePreferenceTarget(site, tabId) {
@@ -1294,77 +1841,89 @@
 
   async function setSiteMode(site, mode, includeCacheEntries = false, tabId) {
     const normalizedSite = await validateSitePreferenceTarget(site, tabId);
-    const settings = await getSettings();
-
-    if (mode === "always" || mode === "never") {
-      settings.siteRules[normalizedSite] = mode;
-    } else {
-      delete settings.siteRules[normalizedSite];
-    }
-
-    await saveSettings(settings);
+    await mutateSettings((settings) => {
+      if (mode === "always" || mode === "never") {
+        settings.siteRules[normalizedSite] = mode;
+      } else {
+        delete settings.siteRules[normalizedSite];
+      }
+    });
     return getPublicSettings(normalizedSite, includeCacheEntries);
   }
 
   async function setSiteViewMode(site, viewMode, includeCacheEntries = false, tabId) {
     const normalizedSite = await validateSitePreferenceTarget(site, tabId);
-    const settings = await getSettings();
-
-    if (viewMode === "bilingual" || viewMode === "translated") {
-      settings.siteViewModes[normalizedSite] = viewMode;
-    } else {
-      delete settings.siteViewModes[normalizedSite];
-    }
-
-    await saveSettings(settings);
+    await mutateSettings((settings) => {
+      if (viewMode === "bilingual" || viewMode === "translated") {
+        settings.siteViewModes[normalizedSite] = viewMode;
+      } else {
+        delete settings.siteViewModes[normalizedSite];
+      }
+    });
     return getPublicSettings(normalizedSite, includeCacheEntries);
   }
 
-  async function updateProviderKey(providerValue, action, value) {
+  async function updateProviderKey(providerValue, action, value, consent, consentVersion) {
     const provider = normalizeProvider(providerValue);
-    const keys = await getProviderKeys();
+    let apiKey = "";
 
-    if (action === "clear") {
-      delete keys[provider];
-    } else {
-      const apiKey = String(value ?? "").trim();
+    if (action !== "clear") {
+      assertProviderDataConsent(consent, consentVersion);
+      apiKey = String(value ?? "").trim();
 
       if (action !== "set" || apiKey.length < 20) {
         throw new Error(`Enter a valid ${PROVIDERS[provider].label} API key.`);
       }
-
-      keys[provider] = apiKey;
     }
 
     providerModelCache.delete(provider);
-    await api.storage.local.set({ [PROVIDER_KEYS_KEY]: keys });
+    await runSettingsWrite(async () => {
+      const keys = await getProviderKeys();
+      let settings;
 
-    if (provider === "deepseek") {
-      await api.storage.local.remove(LEGACY_DEEPSEEK_KEY);
-    }
+      if (action === "clear") {
+        delete keys[provider];
+      } else {
+        keys[provider] = apiKey;
+        settings = await getSettings();
+        settings.providerDataConsentVersion = PROVIDER_DATA_CONSENT_VERSION;
+      }
+
+      await api.storage.local.set({
+        [PROVIDER_KEYS_KEY]: keys,
+        ...(settings ? { [SETTINGS_KEY]: sanitizeSettings(settings) } : {})
+      });
+
+      if (provider === "deepseek") {
+        await api.storage.local.remove(LEGACY_DEEPSEEK_KEY);
+      }
+    });
 
     await broadcastSettings();
   }
 
   async function clearCache() {
     cacheGeneration += 1;
+    clearTimeout(cacheIndexFlushTimer);
+    cacheIndexFlushTimer = undefined;
     clearTimeout(cacheReleaseTimer);
     inFlightTranslations.clear();
     const cache = {};
-    cacheStates.set(cache, {
-      dirtyKeys: new Set(),
-      generation: cacheGeneration,
-      removedKeys: new Set()
-    });
+    const index = { entries: {} };
+    initializeCacheState(cache, index, cacheGeneration);
     cachePromise = Promise.resolve(cache);
-    cacheEntryCount = 0;
-    cacheEstimatedBytes = 2;
     cacheWritePromise = cacheWritePromise
       .catch(() => undefined)
       .then(async () => {
         const stored = await api.storage.local.get(null);
-        const keys = Object.keys(stored).filter((key) => key === CACHE_KEY || key.startsWith(CACHE_ENTRY_PREFIX));
-        await removeStorageKeys(keys);
+        const storedEntryKeys = Object.keys(stored).filter((key) => (
+          key === CACHE_KEY
+          || key === CACHE_INDEX_KEY
+          || key === CACHE_INDEX_DIRTY_KEY
+          || key.startsWith(CACHE_ENTRY_PREFIX)
+        ));
+        await removeStorageKeys(storedEntryKeys);
+        await api.storage.local.set({ [CACHE_INDEX_KEY]: serializeCacheIndex(index) });
       });
     await cacheWritePromise;
   }
@@ -1374,14 +1933,18 @@
     return { cacheEntries: cacheEntryCount };
   }
 
-  async function fetchProviderModels(provider, apiKey) {
+  async function fetchProviderModels(
+    provider,
+    apiKey,
+    deadline = Date.now() + NETWORK_TOTAL_DEADLINE_MS
+  ) {
     const definition = PROVIDERS[provider];
     const body = await fetchJsonWithRetry(getModelsUrl(provider), {
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${apiKey}`
       }
-    }, definition.label);
+    }, definition.label, undefined, undefined, deadline);
     const models = filterProviderModels(provider, body?.data?.map(({ id }) => id));
 
     if (models.length === 0) {
@@ -1391,8 +1954,14 @@
     return models;
   }
 
-  async function listProviderModels(providerValue, force = false) {
+  async function listProviderModels(
+    providerValue,
+    force = false,
+    deadline = Date.now() + NETWORK_TOTAL_DEADLINE_MS
+  ) {
     const provider = normalizeProvider(providerValue);
+    const settings = await getSettings();
+    assertStoredProviderDataConsent(settings);
     const cached = providerModelCache.get(provider);
 
     if (!force && cached?.expiresAt > Date.now()) {
@@ -1405,7 +1974,7 @@
       throw new Error(`No ${PROVIDERS[provider].label} API key is configured.`);
     }
 
-    const models = await fetchProviderModels(provider, apiKey);
+    const models = await fetchProviderModels(provider, apiKey, deadline);
     providerModelCache.set(provider, {
       expiresAt: Date.now() + 300000,
       models
@@ -1413,7 +1982,7 @@
     return { models, provider };
   }
 
-  async function probeProviderConnection(provider, model, apiKey, models) {
+  async function probeProviderConnection(provider, model, apiKey, models, deadline) {
     const definition = PROVIDERS[provider];
 
     if (!models.includes(model)) {
@@ -1432,21 +2001,30 @@
         "Content-Type": "application/json"
       },
       body: JSON.stringify(request.body)
-    }, definition.label);
+    }, definition.label, undefined, undefined, deadline);
   }
 
   async function testProviderConnection(providerValue, modelValue) {
     const provider = normalizeProvider(providerValue);
-    const { models } = await listProviderModels(provider, true);
+    const deadline = Date.now() + NETWORK_TOTAL_DEADLINE_MS;
+    const { models } = await listProviderModels(provider, true, deadline);
     const settings = await getSettings();
     const model = String(modelValue || settings.providerModels[provider]);
     const apiKey = await getProviderKey(provider);
-    await probeProviderConnection(provider, model, apiKey, models);
+    await probeProviderConnection(provider, model, apiKey, models, deadline);
 
     return { model, provider };
   }
 
-  async function configureProvider(providerValue, apiKeyValue, targetLanguageValue) {
+  async function configureProvider(
+    providerValue,
+    apiKeyValue,
+    targetLanguageValue,
+    consent,
+    consentVersion
+  ) {
+    assertProviderDataConsent(consent, consentVersion);
+    const deadline = Date.now() + NETWORK_TOTAL_DEADLINE_MS;
     const provider = normalizeProvider(providerValue);
     const initialKeys = await getProviderKeys();
     const candidateApiKey = String(apiKeyValue || "").trim();
@@ -1458,39 +2036,42 @@
 
     const [settings, models] = await Promise.all([
       getSettings(),
-      fetchProviderModels(provider, apiKey)
+      fetchProviderModels(provider, apiKey, deadline)
     ]);
     const configuredModel = settings.providerModels[provider];
     const model = models.includes(configuredModel) ? configuredModel : models[0];
-    await probeProviderConnection(provider, model, apiKey, models);
+    await probeProviderConnection(provider, model, apiKey, models, deadline);
 
-    const [latestKeys, latestSettings] = await Promise.all([
-      getProviderKeys(),
-      getSettings()
-    ]);
+    await runSettingsWrite(async () => {
+      const [latestKeys, latestSettings] = await Promise.all([
+        getProviderKeys(),
+        getSettings()
+      ]);
 
-    if (!candidateApiKey && latestKeys[provider] !== apiKey) {
-      throw new Error(`${PROVIDERS[provider].label} configuration changed. Try again.`);
-    }
+      if (!candidateApiKey && latestKeys[provider] !== apiKey) {
+        throw new Error(`${PROVIDERS[provider].label} configuration changed. Try again.`);
+      }
 
-    latestKeys[provider] = apiKey;
-    const nextSettings = sanitizeSettings({
-      ...latestSettings,
-      provider,
-      providerModels: {
-        ...latestSettings.providerModels,
-        [provider]: model
-      },
-      targetLanguage: targetLanguageValue
+      latestKeys[provider] = apiKey;
+      const nextSettings = sanitizeSettings({
+        ...latestSettings,
+        provider,
+        providerDataConsentVersion: PROVIDER_DATA_CONSENT_VERSION,
+        providerModels: {
+          ...latestSettings.providerModels,
+          [provider]: model
+        },
+        targetLanguage: targetLanguageValue
+      });
+      await api.storage.local.set({
+        [PROVIDER_KEYS_KEY]: latestKeys,
+        [SETTINGS_KEY]: nextSettings
+      });
+
+      if (provider === "deepseek") {
+        await api.storage.local.remove(LEGACY_DEEPSEEK_KEY);
+      }
     });
-    await api.storage.local.set({
-      [PROVIDER_KEYS_KEY]: latestKeys,
-      [SETTINGS_KEY]: nextSettings
-    });
-
-    if (provider === "deepseek") {
-      await api.storage.local.remove(LEGACY_DEEPSEEK_KEY);
-    }
 
     providerModelCache.set(provider, {
       expiresAt: Date.now() + 300000,
@@ -1653,7 +2234,13 @@
       case "cancelTranslations":
         return cancelTranslationRequests(sender);
       case "configureProvider":
-        return configureProvider(message.provider, message.apiKey, message.targetLanguage);
+        return configureProvider(
+          message.provider,
+          message.apiKey,
+          message.targetLanguage,
+          message.providerDataConsent,
+          message.providerDataConsentVersion
+        );
       case "getSettings":
         return trustedSender
           ? getPublicSettings(message.site, message.includeCacheEntries === true)
@@ -1678,7 +2265,13 @@
           message.tabId
         );
       case "updateProviderKey":
-        return updateProviderKey(message.provider, message.action, message.apiKey)
+        return updateProviderKey(
+          message.provider,
+          message.action,
+          message.apiKey,
+          message.providerDataConsent,
+          message.providerDataConsentVersion
+        )
           .then(() => getPublicSettings(message.site, message.includeCacheEntries === true));
       case "listProviderModels":
         return listProviderModels(message.provider, message.force === true);

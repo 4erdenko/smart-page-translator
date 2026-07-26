@@ -74,17 +74,22 @@
           </label>
         </div>
 
-        <aside class="security-note">
+        <aside id="providerDataDisclosure" class="security-note">
           <strong data-i18n="beforeConnecting">Before connecting</strong>
-          <p data-i18n="onboardingPrivacyDescription">Use a separate API key with a spending limit. The key stays in local extension storage. Page text and short context go directly to the chosen provider only when translation runs; fields, selections, and PDF text require an explicit action.</p>
+          <p data-i18n="onboardingPrivacyDescription">Use a separate API key with a spending limit. The key is sent to the selected provider to verify and authorize requests, then stays in local extension storage. Page text and short context go directly to that provider only when translation runs; fields, selections, and PDF text require an explicit action. Source and translated text are cached locally by default.</p>
           <a href="https://github.com/4erdenko/smart-page-translator/blob/main/PRIVACY.md" target="_blank" rel="noopener noreferrer">
             <span data-i18n="readPrivacyNotice">Read the privacy notice</span>
             <span aria-hidden="true">↗</span>
           </a>
         </aside>
 
+        <label class="consent" for="providerConsent">
+          <input id="providerConsent" type="checkbox" aria-describedby="providerDataDisclosure" required disabled>
+          <span data-i18n="onboardingConsentLabel">I agree that my API key is sent to the selected provider for verification and authorization. Page text translated automatically or manually, including short context, is also sent to that provider. Editable fields, selections, and PDF text are sent only after an explicit action.</span>
+        </label>
+
         <div class="setup-actions">
-          <button id="startButton" class="primary" type="submit" data-i18n="checkKeyAndStart" disabled>Check key and start</button>
+          <button id="startButton" class="primary" type="submit" data-i18n="checkKeyAndStart" disabled>Agree, verify key, and start</button>
           <button id="skipButton" class="secondary" type="button" data-i18n="setUpLater">Set up later</button>
         </div>
         <p id="status" role="status" aria-live="polite"></p>

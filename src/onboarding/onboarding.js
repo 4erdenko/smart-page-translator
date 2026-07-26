@@ -14,6 +14,7 @@
     editableShortcut: document.querySelector("#editableShortcut"),
     form: document.querySelector("#setupForm"),
     keyHint: document.querySelector("#keyHint"),
+    providerConsent: document.querySelector("#providerConsent"),
     providerInputs: [...document.querySelectorAll('input[name="provider"]')],
     settingsButton: document.querySelector("#settingsButton"),
     skipButton: document.querySelector("#skipButton"),
@@ -54,6 +55,7 @@
       input.closest(".provider-card").classList.toggle("selected", input.checked);
     }
     elements.apiKey.value = "";
+    elements.providerConsent.checked = false;
     elements.apiKeyLink.href = PROVIDERS[provider].apiKeyUrl;
     elements.apiKeyLink.querySelector("span").textContent = t(
       "createProviderApiKey",
@@ -75,6 +77,7 @@
         "The key is saved only after the connection succeeds."
       );
     resetCompletion();
+    setBusy(false);
   }
 
   function renderShortcut(element, shortcut) {
@@ -100,9 +103,10 @@
   function setBusy(busy) {
     const setupDisabled = busy || !setupReady;
     elements.apiKey.disabled = setupDisabled;
+    elements.providerConsent.disabled = setupDisabled;
     elements.settingsButton.disabled = busy;
     elements.skipButton.disabled = busy;
-    elements.startButton.disabled = setupDisabled;
+    elements.startButton.disabled = setupDisabled || (!setupComplete && !elements.providerConsent.checked);
     elements.targetLanguage.disabled = setupDisabled;
 
     for (const input of elements.providerInputs) {
@@ -161,6 +165,19 @@
       return;
     }
 
+    if (!elements.providerConsent.checked) {
+      showStatus(
+        t(
+          "onboardingConsentRequired",
+          null,
+          "Confirm the provider data disclosure before continuing."
+        ),
+        "error"
+      );
+      elements.providerConsent.focus();
+      return;
+    }
+
     setBusy(true);
     showStatus(t("checkingProviderConnection", { provider: label }, `Checking ${label}…`), "working");
 
@@ -169,6 +186,8 @@
         type: "configureProvider",
         apiKey,
         provider,
+        providerDataConsent: true,
+        providerDataConsentVersion: 1,
         targetLanguage: elements.targetLanguage.value
       });
       providerStatuses[provider] = {
@@ -213,6 +232,10 @@
   }
 
   elements.apiKey.addEventListener("input", resetCompletion);
+  elements.providerConsent.addEventListener("change", () => {
+    resetCompletion();
+    setBusy(false);
+  });
   elements.targetLanguage.addEventListener("change", resetCompletion);
   elements.settingsButton.addEventListener("click", () => api.runtime.openOptionsPage());
   elements.skipButton.addEventListener("click", () => window.close());

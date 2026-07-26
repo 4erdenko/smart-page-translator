@@ -10,7 +10,7 @@
 }
 
 body {
-  width: 370px;
+  width: 390px;
   margin: 0;
   background:
     radial-gradient(circle at 88% -12%, rgba(10, 132, 255, 0.2), transparent 44%),
@@ -98,9 +98,7 @@ body[data-tone="error"] .activity-orb i {
 }
 
 .field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
   font-size: 13px;
   font-weight: 650;
@@ -113,8 +111,7 @@ body[data-tone="error"] .activity-orb i {
 }
 
 select {
-  width: 176px;
-  max-width: 60%;
+  width: 100%;
   padding: 8px 28px 8px 10px;
   border: 1px solid #dfdce9;
   border-radius: 10px;
@@ -193,7 +190,7 @@ select {
   color: #716d83;
   border-radius: 8px;
   background: transparent;
-  font-size: 10px;
+  font-size: 11px;
   transition:
     color 180ms ease,
     background 180ms ease,
@@ -220,7 +217,7 @@ select {
 .metric-details summary {
   color: #77738b;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   text-align: center;
 }
@@ -244,7 +241,7 @@ select {
 .metrics span {
   margin-top: 2px;
   color: #898597;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .actions {
@@ -279,6 +276,13 @@ button:disabled {
   opacity: 0.5;
 }
 
+button:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #0066cc;
+  outline-offset: 2px;
+}
+
 .primary {
   color: #fff;
   background: #0071e3;
@@ -297,7 +301,7 @@ button:disabled {
 .footnote {
   margin-top: 10px;
   color: #8b8798;
-  font-size: 10px;
+  font-size: 11px;
   text-align: center;
 }
 

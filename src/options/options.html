@@ -48,6 +48,13 @@
             <small id="keyHint" data-i18n="apiKeyHint">The key is stored only in local extension storage and is never displayed again.</small>
           </label>
 
+          <div id="keyConsent" class="key-consent" hidden>
+            <label for="keyConsentInput">
+              <input id="keyConsentInput" type="checkbox">
+              <span data-i18n="providerConsentLabel">I agree that the API key I enter will be sent to the selected provider to verify and authorize access. Page text translated automatically or manually, including short context, will also be sent to that provider. Editable fields, selections, and PDF text are sent only after an explicit action.</span>
+            </label>
+          </div>
+
           <div class="inline-actions">
             <button id="refreshModelsButton" class="secondary" type="button" data-i18n="loadModels">Load models</button>
             <button id="testButton" class="secondary" type="button" data-i18n="testConnection">Test connection</button>
@@ -82,75 +89,86 @@
           </label>
         </section>
 
-        <section class="card automation-card">
-          <div class="section-heading">
-            <div>
-              <h2 data-i18n="automaticTranslation">Automatic translation</h2>
-              <p data-i18n="automaticDescription">Choose source languages and exact websites that should translate without another click.</p>
-            </div>
-            <span class="badge" data-i18n="localRules">Local rules</span>
-          </div>
-
-          <fieldset class="language-rules">
-            <legend data-i18n="translateLanguagesAutomatically">Translate these languages automatically</legend>
-            <div class="language-grid" id="automaticLanguages"></div>
-            <small data-i18n="languageDetectionPrivacy">Detection runs locally in the browser. Page text is sent to the selected provider only after a rule matches.</small>
-          </fieldset>
-
-          <div class="site-rule-grid">
-            <label class="field" for="alwaysSites">
-              <span data-i18n="alwaysTranslateWebsites">Always translate websites</span>
-              <textarea id="alwaysSites" rows="5" placeholder="shop.example.com&#10;https://news.example.org" data-i18n-placeholder="alwaysSitesPlaceholder"></textarea>
-              <small data-i18n="alwaysSitesHint">One domain or origin per line. All paths on that origin are included.</small>
-            </label>
-
-            <label class="field" for="neverSites">
-              <span data-i18n="neverTranslateWebsites">Never translate websites</span>
-              <textarea id="neverSites" rows="5" placeholder="bank.example.com" data-i18n-placeholder="neverSitesPlaceholder"></textarea>
-              <small data-i18n="neverSitesHint">These rules override automatic language detection.</small>
-            </label>
-          </div>
-
-          <label class="motion-setting" for="animationEnabled">
+        <details class="advanced-settings">
+          <summary>
             <span>
-              <strong data-i18n="textShimmer">Text shimmer</strong>
-              <small data-i18n="textShimmerHint">Briefly highlight only text that is being translated.</small>
+              <strong data-i18n="advancedSettings">Advanced settings</strong>
+              <small data-i18n="advancedSettingsDescription">Automation, protected terms, motion, and local cache limits.</small>
             </span>
-            <input id="animationEnabled" type="checkbox">
-            <i aria-hidden="true"></i>
-          </label>
-        </section>
+          </summary>
 
-        <section class="card">
-          <div class="section-heading">
-            <div>
-              <h2 data-i18n="protectedTerms">Protected names and terms</h2>
-              <p data-i18n="protectedTermsDescription">Keep selected brands, people, product lines, and model names unchanged.</p>
-            </div>
+          <div class="advanced-content">
+            <section class="card automation-card">
+              <div class="section-heading">
+                <div>
+                  <h2 data-i18n="automaticTranslation">Automatic translation</h2>
+                  <p data-i18n="automaticDescription">Choose source languages and exact websites that should translate without another click.</p>
+                </div>
+                <span class="badge" data-i18n="localRules">Local rules</span>
+              </div>
+
+              <fieldset class="language-rules">
+                <legend data-i18n="translateLanguagesAutomatically">Translate these languages automatically</legend>
+                <div class="language-grid" id="automaticLanguages"></div>
+                <small data-i18n="languageDetectionPrivacy">Detection runs locally in the browser. Page text is sent to the selected provider only after a rule matches.</small>
+              </fieldset>
+
+              <div class="site-rule-grid">
+                <label class="field" for="alwaysSites">
+                  <span data-i18n="alwaysTranslateWebsites">Always translate websites</span>
+                  <textarea id="alwaysSites" rows="5" placeholder="shop.example.com&#10;https://news.example.org" data-i18n-placeholder="alwaysSitesPlaceholder"></textarea>
+                  <small data-i18n="alwaysSitesHint">One domain or origin per line. All paths on that origin are included.</small>
+                </label>
+
+                <label class="field" for="neverSites">
+                  <span data-i18n="neverTranslateWebsites">Never translate websites</span>
+                  <textarea id="neverSites" rows="5" placeholder="bank.example.com" data-i18n-placeholder="neverSitesPlaceholder"></textarea>
+                  <small data-i18n="neverSitesHint">These rules override automatic language detection.</small>
+                </label>
+              </div>
+
+              <label class="motion-setting" for="animationEnabled">
+                <span>
+                  <strong data-i18n="textShimmer">Text shimmer</strong>
+                  <small data-i18n="textShimmerHint">Briefly highlight only text that is being translated.</small>
+                </span>
+                <input id="animationEnabled" type="checkbox">
+                <i aria-hidden="true"></i>
+              </label>
+            </section>
+
+            <section class="card">
+              <div class="section-heading">
+                <div>
+                  <h2 data-i18n="protectedTerms">Protected names and terms</h2>
+                  <p data-i18n="protectedTermsDescription">Keep selected brands, people, product lines, and model names unchanged.</p>
+                </div>
+              </div>
+              <label class="field" for="protectedTerms">
+                <textarea id="protectedTerms" rows="5" placeholder="Apple&#10;AirPods Pro&#10;Jane Doe" data-i18n-placeholder="protectedTermsPlaceholder"></textarea>
+                <small data-i18n="protectedTermsHint">One exact term per line. Matching is case-insensitive.</small>
+              </label>
+            </section>
+
+            <section class="card">
+              <div class="section-heading">
+                <div>
+                  <h2 data-i18n="localCache">Local cache</h2>
+                  <p data-i18n="localCacheDescription">Identical phrases are reused without another API request.</p>
+                </div>
+                <strong id="cacheCount">0 entries</strong>
+              </div>
+
+              <label class="field" for="cacheMaxEntries">
+                <span data-i18n="maximumCachedPhrases">Maximum cached phrases</span>
+                <input id="cacheMaxEntries" type="number" min="100" max="20000" step="100">
+                <small data-i18n="cacheLimitHint">Default: 16,000 phrases. Hard limits: 20,000 phrases and 16 MiB.</small>
+              </label>
+
+              <button id="clearCacheButton" class="ghost danger" type="button" data-i18n="clearTranslationCache">Clear translation cache</button>
+            </section>
           </div>
-          <label class="field" for="protectedTerms">
-            <textarea id="protectedTerms" rows="5" placeholder="Apple&#10;AirPods Pro&#10;Jane Doe" data-i18n-placeholder="protectedTermsPlaceholder"></textarea>
-            <small data-i18n="protectedTermsHint">One exact term per line. Matching is case-insensitive.</small>
-          </label>
-        </section>
-
-        <section class="card">
-          <div class="section-heading">
-            <div>
-              <h2 data-i18n="localCache">Local cache</h2>
-              <p data-i18n="localCacheDescription">Identical phrases are reused without another API request.</p>
-            </div>
-            <strong id="cacheCount">0 entries</strong>
-          </div>
-
-          <label class="field" for="cacheMaxEntries">
-            <span data-i18n="maximumCachedPhrases">Maximum cached phrases</span>
-            <input id="cacheMaxEntries" type="number" min="100" max="20000" step="100">
-            <small data-i18n="cacheLimitHint">Default: 16,000 phrases. Hard limits: 20,000 phrases and 16 MiB.</small>
-          </label>
-
-          <button id="clearCacheButton" class="ghost danger" type="button" data-i18n="clearTranslationCache">Clear translation cache</button>
-        </section>
+        </details>
 
         <section class="privacy">
           <strong data-i18n="privacyNote">Privacy note</strong>

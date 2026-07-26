@@ -231,28 +231,47 @@
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
   }
 
-  function estimateCacheEntryBytes(key, entry) {
-    return new TextEncoder().encode(JSON.stringify({ [key]: entry })).byteLength;
+  function estimateCacheEntryBytes(key, entry, storageKeyPrefix = "") {
+    const serialized = JSON.stringify({ [`${storageKeyPrefix}${key}`]: entry });
+    return new TextEncoder().encode(serialized.slice(1, -1)).byteLength;
   }
 
-  function estimateCacheBytes(cache) {
-    return 2 + Object.entries(cache || {}).reduce(
-      (total, [key, entry]) => total + estimateCacheEntryBytes(key, entry),
+  function estimateCacheBytes(cache, storageKeyPrefix = "") {
+    const entries = Object.entries(cache || {});
+    return 2 + Math.max(0, entries.length - 1) + entries.reduce(
+      (total, [key, entry]) => total + estimateCacheEntryBytes(key, entry, storageKeyPrefix),
       0
     );
   }
 
-  function setCacheEntry(cache, key, entry, currentBytes = estimateCacheBytes(cache)) {
-    const previousBytes = Object.hasOwn(cache, key) ? estimateCacheEntryBytes(key, cache[key]) : 0;
+  function setCacheEntry(
+    cache,
+    key,
+    entry,
+    currentBytes = estimateCacheBytes(cache),
+    storageKeyPrefix = ""
+  ) {
+    const exists = Object.hasOwn(cache, key);
+    const previousBytes = exists
+      ? estimateCacheEntryBytes(key, cache[key], storageKeyPrefix)
+      : 0;
+    const separatorBytes = !exists && Object.keys(cache).length > 0 ? 1 : 0;
     cache[key] = entry;
-    return Math.max(2, currentBytes - previousBytes + estimateCacheEntryBytes(key, entry));
+    return Math.max(
+      2,
+      currentBytes
+        - previousBytes
+        + separatorBytes
+        + estimateCacheEntryBytes(key, entry, storageKeyPrefix)
+    );
   }
 
   function pruneCacheEntries(
     cache,
     maximumEntries,
     maximumBytes = MAX_CACHE_BYTES,
-    currentBytes = estimateCacheBytes(cache)
+    currentBytes = estimateCacheBytes(cache),
+    storageKeyPrefix = ""
   ) {
     const entries = Object.entries(cache || {});
     let remainingEntries = entries.length;
@@ -273,7 +292,11 @@
 
       delete cache[key];
       remainingEntries -= 1;
-      remainingBytes -= estimateCacheEntryBytes(key, entry);
+      remainingBytes -= estimateCacheEntryBytes(key, entry, storageKeyPrefix);
+
+      if (remainingEntries > 0) {
+        remainingBytes -= 1;
+      }
       removedEntries += 1;
       removedKeys.push(key);
     }

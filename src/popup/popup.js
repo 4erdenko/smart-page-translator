@@ -1,11 +1,66 @@
-(function initializePopup() {
-  const api = globalThis.browser;
+(function initializePopup(root) {
+  function normalizeLanguageCode(value) {
+    return String(value || "").trim().toLowerCase().split(/[-_]/u)[0];
+  }
+
+  function getInactiveTranslationPresentation(
+    status,
+    language,
+    targetLanguage,
+    supportedLanguages = []
+  ) {
+    if (status?.detectedLanguage) {
+      const detectedLanguage = normalizeLanguageCode(status.detectedLanguage);
+      const normalizedTargetLanguage = normalizeLanguageCode(targetLanguage);
+      const canEnableLanguage = detectedLanguage !== normalizedTargetLanguage
+        && supportedLanguages.includes(detectedLanguage);
+      const details = detectedLanguage === normalizedTargetLanguage
+        ? {
+          detailsFallback: "This page already uses your target language. Choose a different target language to translate it.",
+          detailsKey: "pageAlreadyTargetLanguageDetails"
+        }
+        : canEnableLanguage
+          ? {
+            detailsFallback: "Translate now, always translate this website, or enable this language in Settings.",
+            detailsKey: "translationAvailableDetails"
+          }
+          : {
+            detailsFallback: "Translate this page now or always translate this website.",
+            detailsKey: "translationAvailableWithoutLanguageDetails"
+          };
+
+      return {
+        ...details,
+        titleFallback: `Detected language: ${language}`,
+        titleKey: "detectedLanguage",
+        titleReplacements: { language }
+      };
+    }
+
+    return {
+      detailsFallback: "Translate this page now or always translate this website.",
+      detailsKey: "translationAvailableWithoutLanguageDetails",
+      titleFallback: "Automatic translation is off",
+      titleKey: "translationNotAutomatic"
+    };
+  }
+
+  root.SmartTranslationPopupController = Object.freeze({
+    getInactiveTranslationPresentation
+  });
+
+  if (!root.browser || !root.document || !root.SmartTranslationUiI18n) {
+    return;
+  }
+
+  const api = root.browser;
   const {
+    LANGUAGE_CODES,
     fillLanguageSelect,
     getLanguageName,
     localizeDocument,
     t
-  } = globalThis.SmartTranslationUiI18n;
+  } = root.SmartTranslationUiI18n;
   localizeDocument();
   const elements = {
     apiItemCount: document.querySelector("#apiItemCount"),
@@ -171,12 +226,22 @@
         "idle"
       );
     } else {
+      const presentation = getInactiveTranslationPresentation(
+        status,
+        language,
+        elements.targetLanguage.value,
+        LANGUAGE_CODES
+      );
       showStatus(
-        t("waitingForRule", null, "Waiting for a rule"),
         t(
-          "waitingForRuleDetails",
-          { language },
-          `${language} is not selected for automatic translation.`
+          presentation.titleKey,
+          presentation.titleReplacements,
+          presentation.titleFallback
+        ),
+        t(
+          presentation.detailsKey,
+          null,
+          presentation.detailsFallback
         ),
         "idle"
       );
@@ -361,6 +426,7 @@
   api.runtime.onMessage.addListener(handleStatusMessage);
   window.addEventListener("unload", () => api.runtime.onMessage.removeListener(handleStatusMessage), { once: true });
 
+  updateCacheSummary(0);
   initialize().catch((error) => {
     showStatus(
       t("extensionError", null, "Extension error"),
@@ -368,4 +434,4 @@
       "error"
     );
   });
-})();
+})(globalThis);

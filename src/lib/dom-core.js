@@ -54,15 +54,90 @@
       .trim();
   }
 
+  function hasMeaningfulText(value) {
+    return /[^\s\u00a0]/u.test(String(value ?? ""));
+  }
+
   function escapeRegExp(value) {
     return String(value).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   }
 
-  function containsStandaloneTerm(text, term) {
-    return new RegExp(
-      `(?<![\\p{L}\\p{N}])${escapeRegExp(term)}(?![\\p{L}\\p{N}])`,
-      "iu"
-    ).test(text);
+  function createProtectedTermIndex(terms, wholeTerms = []) {
+    const normalizedWholeTerms = new Set(Array.from(
+      wholeTerms || [],
+      (term) => normalizeText(term).toLowerCase()
+    ));
+    const normalizedTerms = new Map(Array.from(terms || [], normalizeText)
+      .filter(Boolean)
+      .map((term) => [term.toLowerCase(), term]));
+    const entries = [...normalizedTerms]
+      .map(([foldedTerm, term]) => ({
+        foldedTerm,
+        matcher: new RegExp(
+          `(?<![\\p{L}\\p{N}])${escapeRegExp(term)}(?![\\p{L}\\p{N}])`,
+          "iu"
+        ),
+        term
+      }))
+      .sort((left, right) => right.term.length - left.term.length);
+
+    return Object.freeze({
+      entries: Object.freeze(entries),
+      wholeTerms: normalizedWholeTerms
+    });
+  }
+
+  function getUtf8ByteLength(value) {
+    const text = String(value ?? "");
+    let bytes = 0;
+
+    for (let index = 0; index < text.length; index += 1) {
+      const code = text.charCodeAt(index);
+
+      if (code <= 0x7F) {
+        bytes += 1;
+      } else if (code <= 0x7FF) {
+        bytes += 2;
+      } else if (code >= 0xD800
+        && code <= 0xDBFF
+        && text.charCodeAt(index + 1) >= 0xDC00
+        && text.charCodeAt(index + 1) <= 0xDFFF) {
+        bytes += 4;
+        index += 1;
+      } else {
+        bytes += 3;
+      }
+    }
+
+    return bytes;
+  }
+
+  function isTextWithinLimits(value, maximumCharacters, maximumBytes) {
+    const text = String(value ?? "");
+    return text.length <= Math.max(0, Number(maximumCharacters) || 0)
+      && getUtf8ByteLength(text) <= Math.max(0, Number(maximumBytes) || 0);
+  }
+
+  function isWithinTextBudget(current, additional, maximum) {
+    return Number(current?.characters || 0) + Number(additional?.characters || 0)
+        <= Number(maximum?.characters || 0)
+      && Number(current?.bytes || 0) + Number(additional?.bytes || 0)
+        <= Number(maximum?.bytes || 0);
+  }
+
+  function getPendingQueueDecision(current, additional, maximum) {
+    const fitsWhenEmpty = Number(additional?.targets || 0) <= Number(maximum?.targets || 0)
+      && isWithinTextBudget({}, additional, maximum);
+
+    if (!fitsWhenEmpty) {
+      return "reject";
+    }
+
+    return Number(current?.targets || 0) + Number(additional?.targets || 0)
+        <= Number(maximum?.targets || 0)
+      && isWithinTextBudget(current, additional, maximum)
+      ? "queue"
+      : "retry";
   }
 
   function isValidBrandTerm(value) {
@@ -92,13 +167,70 @@
     };
   }
 
-  function splitTextForTranslation(value, maximumCharacters) {
+  function splitTextForTranslation(
+    value,
+    maximumCharacters,
+    preserveWhitespace = false,
+    maximumChunks = Infinity
+  ) {
+    const chunkLimit = Math.max(1, Math.floor(Number(maximumChunks) || 1));
+
+    if (preserveWhitespace) {
+      const text = String(value ?? "").normalize("NFC");
+      const chunks = [];
+      let start = 0;
+
+      for (const match of text.matchAll(/\s+/gu)) {
+        const separator = match[0];
+
+        if (separator === " ") {
+          continue;
+        }
+
+        const remainingChunks = chunkLimit - chunks.length;
+
+        if (remainingChunks <= 0) {
+          chunks[chunks.length - 1].separator += text.slice(start);
+          return chunks;
+        }
+
+        const segmentChunks = splitTextForTranslation(
+          text.slice(start, match.index),
+          maximumCharacters,
+          false,
+          remainingChunks
+        );
+
+        if (segmentChunks.length > 0) {
+          segmentChunks[segmentChunks.length - 1].separator += separator;
+          chunks.push(...segmentChunks);
+        } else if (chunks.length > 0) {
+          chunks[chunks.length - 1].separator += separator;
+        }
+
+        start = match.index + separator.length;
+
+        if (chunks.length >= chunkLimit) {
+          chunks[chunks.length - 1].separator += text.slice(start);
+          return chunks;
+        }
+      }
+
+      chunks.push(...splitTextForTranslation(
+        text.slice(start),
+        maximumCharacters,
+        false,
+        chunkLimit - chunks.length
+      ));
+      return chunks;
+    }
+
     const text = normalizeText(value);
     const limit = Math.max(1, Math.floor(Number(maximumCharacters) || 1));
     const chunks = [];
     let start = 0;
 
-    while (start < text.length) {
+    while (start < text.length && chunks.length < chunkLimit) {
       let end = Math.min(text.length, start + limit);
       let nextStart = end;
       let separator = "";
@@ -123,12 +255,27 @@
       start = nextStart;
     }
 
+    if (start < text.length) {
+      chunks[chunks.length - 1].separator += text.slice(start);
+    }
+
     return chunks;
   }
 
   function normalizeLanguageCode(value) {
     const match = String(value ?? "").trim().toLowerCase().match(/^([a-z]{2,3})(?:[-_].*)?$/u);
     return match?.[1] || "";
+  }
+
+  function getPageContextChange(currentUrl, currentLanguage, nextUrl, nextLanguage) {
+    const languageChanged = normalizeLanguageCode(currentLanguage) !== normalizeLanguageCode(nextLanguage);
+    const urlChanged = String(currentUrl ?? "") !== String(nextUrl ?? "");
+
+    return {
+      changed: languageChanged || urlChanged,
+      languageChanged,
+      urlChanged
+    };
   }
 
   function addPageLanguageContext(context, pageLanguage) {
@@ -244,6 +391,46 @@
     }
 
     return isBlockedElement(element.parentElement || element.getRootNode?.().host || null);
+  }
+
+  function isGuaranteedBlockedSubtree(element) {
+    if (!element) {
+      return false;
+    }
+
+    if (element.hasAttribute?.("data-no-translate")) {
+      return true;
+    }
+
+    if (isEditableElement(element)) {
+      return isBlockedElement(element.parentElement || element.getRootNode?.().host || null);
+    }
+
+    return isBlockedElement(element);
+  }
+
+  function isWhitespaceSensitiveElement(element, readWhiteSpace) {
+    if (!element) {
+      return false;
+    }
+
+    if (element.closest?.("pre")) {
+      return true;
+    }
+
+    try {
+      const whiteSpace = String(readWhiteSpace
+        ? readWhiteSpace(element)
+        : globalThis.getComputedStyle?.(element)?.whiteSpace || "").toLowerCase();
+      return ["break-spaces", "pre", "pre-line", "pre-wrap"].includes(whiteSpace);
+    } catch {
+      return false;
+    }
+  }
+
+  function shouldPreserveTextWhitespace(element, value, readWhiteSpace) {
+    return /[^\S ]|\s{2,}/u.test(String(value ?? ""))
+      && isWhitespaceSensitiveElement(element, readWhiteSpace);
   }
 
   function getSafeContextText(element, maximumCharacters) {
@@ -408,17 +595,117 @@
     const normalizedText = normalizeText(text);
     const foldedText = normalizedText.toLowerCase();
     const canProtectWholeText = kind === "brand-name" || kind === "proper-name";
-    const normalizedWholeTerms = new Set(Array.from(wholeTerms || [], (term) => normalizeText(term).toLowerCase()));
-    const normalizedTerms = new Map(Array.from(terms || [], normalizeText)
-      .filter(Boolean)
-      .map((term) => [term.toLowerCase(), term]));
+    const index = Array.isArray(terms?.entries) && terms?.wholeTerms instanceof Set
+      ? terms
+      : createProtectedTermIndex(terms, wholeTerms);
 
-    return [...normalizedTerms]
-      .filter(([foldedTerm, term]) => foldedText.includes(foldedTerm)
-        && containsStandaloneTerm(normalizedText, term)
-        && (canProtectWholeText || foldedTerm !== foldedText || normalizedWholeTerms.has(foldedTerm)))
-      .map(([, term]) => term)
-      .sort((left, right) => right.length - left.length);
+    return index.entries
+      .filter(({ foldedTerm, matcher }) => foldedText.includes(foldedTerm)
+        && matcher.test(normalizedText)
+        && (canProtectWholeText || foldedTerm !== foldedText || index.wholeTerms.has(foldedTerm)))
+      .map(({ term }) => term);
+  }
+
+  function discoverOpenShadowRoots(walker, maximumNodes, visitRoot) {
+    const limit = Math.max(1, Math.floor(Number(maximumNodes) || 1));
+    let node = null;
+    let processed = 0;
+
+    while (processed < limit && (node = walker.nextNode())) {
+      if (node.shadowRoot) {
+        visitRoot(node.shadowRoot);
+      }
+
+      processed += 1;
+    }
+
+    return {
+      budgetUsed: Math.max(1, processed),
+      complete: node === null,
+      processed
+    };
+  }
+
+  function discoverOpenShadowRootsAcrossReferences({
+    createWalker,
+    isRootActive,
+    iterator,
+    maximumWork,
+    referencesRemaining,
+    visitRoot,
+    walkers
+  }) {
+    const incompleteReferences = [];
+    const limit = Math.max(1, Math.floor(Number(maximumWork) || 1));
+    let remainingReferences = Math.max(0, Math.floor(Number(referencesRemaining) || 0));
+    let remainingWork = limit;
+
+    while (remainingWork > 0 && remainingReferences > 0) {
+      const next = iterator.next();
+
+      if (next.done) {
+        remainingReferences = 0;
+        break;
+      }
+
+      remainingReferences -= 1;
+      const root = next.value?.deref?.();
+
+      if (!root || !isRootActive(root)) {
+        if (root) {
+          walkers.delete(root);
+        }
+
+        remainingWork -= 1;
+        continue;
+      }
+
+      const walker = walkers.get(root) || createWalker(root);
+      const rootsToShare = Math.min(remainingWork, remainingReferences + 1);
+      const result = discoverOpenShadowRoots(
+        walker,
+        Math.max(1, Math.floor(remainingWork / rootsToShare)),
+        visitRoot
+      );
+      remainingWork -= result.budgetUsed;
+
+      if (result.complete) {
+        walkers.delete(root);
+      } else {
+        walkers.set(root, walker);
+        incompleteReferences.push(next.value);
+      }
+    }
+
+    return {
+      complete: remainingReferences === 0,
+      incomplete: incompleteReferences.length > 0,
+      incompleteReferences,
+      processed: limit - remainingWork,
+      referencesRemaining: remainingReferences
+    };
+  }
+
+  function getShadowDiscoveryDelay(passComplete, sliceDelay, passDelay) {
+    const delay = passComplete ? passDelay : sliceDelay;
+    return Math.max(1, Math.floor(Number(delay) || 1));
+  }
+
+  function shouldRunShadowDiscoveryRetryRound(
+    retryReferenceCount,
+    completedRetryRounds,
+    maximumRetryRounds
+  ) {
+    const limit = Math.max(1, Math.floor(Number(maximumRetryRounds) || 1));
+    return Number(retryReferenceCount) > 0 && Number(completedRetryRounds) < limit;
+  }
+
+  function shouldPruneScanNode(node, elementNodeType = 1) {
+    return node?.nodeType === elementNodeType && isGuaranteedBlockedSubtree(node);
+  }
+
+  function shouldRunShadowDiscovery(translationActive, visibilityState) {
+    return Boolean(translationActive && visibilityState === "visible");
   }
 
   function isLikelyPersonalName(element, value, kind) {
@@ -467,18 +754,30 @@
     BLOCKED_TAGS,
     TRANSLATABLE_ATTRIBUTES,
     addPageLanguageContext,
+    createProtectedTermIndex,
+    discoverOpenShadowRoots,
+    discoverOpenShadowRootsAcrossReferences,
     findClosestTextKindElement,
     getBrandTermVariants,
     getImplicitOptionValue,
     getInheritedTextKind,
+    getPageContextChange,
+    getPendingQueueDecision,
     getSafeContextText,
+    getShadowDiscoveryDelay,
     getTranslatableAttributes,
     getTextKind,
+    getUtf8ByteLength,
+    hasMeaningfulText,
     isBlockedAttributeElement,
     isBlockedElement,
     isEditableElement,
+    isGuaranteedBlockedSubtree,
     isLikelyPersonalName,
+    isTextWithinLimits,
     isValidBrandTerm,
+    isWhitespaceSensitiveElement,
+    isWithinTextBudget,
     normalizeLanguageCode,
     normalizeText,
     resolveOriginalText,
@@ -486,7 +785,11 @@
     selectProtectedTerms,
     shouldAutoTranslateLanguage,
     shouldDetectPageLanguage,
+    shouldPruneScanNode,
+    shouldPreserveTextWhitespace,
     shouldRefreshRoutePolicy,
+    shouldRunShadowDiscovery,
+    shouldRunShadowDiscoveryRetryRound,
     shouldStartTranslation,
     shouldTranslateText,
     splitBoundaryWhitespace,

@@ -1,11 +1,23 @@
-(function initializeOptions() {
-  const api = globalThis.browser;
+(function initializeOptions(root) {
+  function requiresProviderConsent(apiKey, consentChecked) {
+    return Boolean(String(apiKey || "").trim()) && !consentChecked;
+  }
+
+  root.SmartTranslationOptionsController = Object.freeze({
+    requiresProviderConsent
+  });
+
+  if (!root.browser || !root.document || !root.SmartTranslationUiI18n) {
+    return;
+  }
+
+  const api = root.browser;
   const {
     fillLanguageChoices,
     fillLanguageSelect,
     localizeDocument,
     t
-  } = globalThis.SmartTranslationUiI18n;
+  } = root.SmartTranslationUiI18n;
   localizeDocument();
   fillLanguageSelect(document.querySelector("#sourceLanguage"), { includeAuto: true });
   fillLanguageSelect(document.querySelector("#targetLanguage"));
@@ -27,6 +39,8 @@
     defaultViewMode: document.querySelector("#defaultViewMode"),
     form: document.querySelector("#settingsForm"),
     keyBadge: document.querySelector("#keyBadge"),
+    keyConsent: document.querySelector("#keyConsent"),
+    keyConsentInput: document.querySelector("#keyConsentInput"),
     keyHint: document.querySelector("#keyHint"),
     model: document.querySelector("#model"),
     neverSites: document.querySelector("#neverSites"),
@@ -110,7 +124,21 @@
         { provider: label },
         `Enter a ${label} API key, then load the models available to this account.`
       );
+    renderProviderConsent(configured);
     renderModelOptions(provider);
+  }
+
+  function renderProviderConsent(configured = Boolean(providerStatuses[currentProvider]?.hasApiKey)) {
+    const hasCandidateKey = Boolean(elements.apiKey.value.trim());
+    const visible = !configured || hasCandidateKey;
+    elements.keyConsent.hidden = !visible;
+    elements.keyConsentInput.disabled = !visible;
+
+    if (!visible) {
+      elements.keyConsentInput.checked = false;
+    }
+
+    elements.keyConsentInput.setAttribute("aria-invalid", "false");
   }
 
   function formatMiB(bytes) {
@@ -156,11 +184,24 @@
       return false;
     }
 
+    if (requiresProviderConsent(apiKey, elements.keyConsentInput.checked)) {
+      const message = t(
+        "providerConsentRequired",
+        null,
+        "Confirm provider data sharing before saving or checking this API key."
+      );
+      elements.keyConsentInput.setAttribute("aria-invalid", "true");
+      elements.keyConsentInput.focus();
+      throw new Error(message);
+    }
+
     const response = await api.runtime.sendMessage({
       type: "updateProviderKey",
       action: "set",
       apiKey,
       provider,
+      providerDataConsent: true,
+      providerDataConsentVersion: 1,
       site: ""
     });
     providerStatuses = { ...response.providers };
@@ -204,6 +245,7 @@
     providerModels[currentProvider] = elements.model.value || providerModels[currentProvider];
     currentProvider = elements.provider.value;
     elements.apiKey.value = "";
+    elements.keyConsentInput.checked = false;
     renderProviderState(currentProvider);
 
     if (providerStatuses[currentProvider]?.hasApiKey && !availableModels[currentProvider]) {
@@ -213,6 +255,14 @@
 
   elements.model.addEventListener("change", () => {
     providerModels[currentProvider] = elements.model.value;
+  });
+
+  elements.apiKey.addEventListener("input", () => {
+    renderProviderConsent();
+  });
+
+  elements.keyConsentInput.addEventListener("change", () => {
+    elements.keyConsentInput.setAttribute("aria-invalid", "false");
   });
 
   elements.form.addEventListener("submit", async (event) => {
@@ -344,4 +394,4 @@
   });
 
   load().catch((error) => showSaveStatus(String(error?.message || error), true));
-})();
+})(globalThis);

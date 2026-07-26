@@ -10,7 +10,9 @@ The PDF workspace reads a file locally with bundled PDF.js code. PDF bytes, the 
 
 API keys, website rules, settings, user-defined protected terms, source text, and translated text are stored locally through the browser extension storage API. Keys are available only to extension contexts and are never displayed after saving. A key is sent only to the selected provider as an authorization credential. Firefox declares this transfer as `authenticationInfo` and translated page text as `websiteContent` in its built-in data-collection consent metadata. Local extension storage is not a hardware-backed secrets vault; restricted keys with conservative spending limits are recommended.
 
-The translation cache is limited by phrase count and serialized byte size. Its default limit is 16,000 phrases, and its hard serialized-size limit is 16 MiB. Users can lower the phrase limit, disable PDF caching per operation, or clear the cache at any time from Settings. Removing the extension also allows the browser to remove its local data according to browser policy.
+Before a new or replacement key is saved and verified, the trusted setup or Settings page requires explicit acceptance of the current provider-data disclosure. The accepted disclosure version is stored locally. Content scripts cannot grant this consent or invoke provider configuration actions.
+
+The translation cache is limited by phrase count and serialized byte size. Its default limit is 16,000 phrases, and its hard serialized-size limit is 16 MiB, including physical storage keys and cache-index metadata. Users can lower the phrase limit, disable PDF caching per operation, or clear the cache at any time from Settings. Removing the extension also allows the browser to remove its local data according to browser policy.
 
 Private/incognito page text and translations bypass the persistent cache. The popup does not save website rules from private tabs; one-time translation remains available for the current page. Existing global language and website rules may still determine whether translation starts, but no private-page content is added to extension storage.
 

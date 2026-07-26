@@ -11,6 +11,8 @@ const contentSource = readFileSync(require.resolve("../src/content.js"), "utf8")
 const pdfSource = readFileSync(require.resolve("../src/pdf/pdf.js"), "utf8");
 const popupSource = readFileSync(require.resolve("../src/popup/popup.js"), "utf8");
 const CACHE_ENTRY_PREFIX = "translationCacheEntryV1:";
+const CACHE_INDEX_DIRTY_KEY = "translationCacheIndexDirtyV1";
+const CACHE_INDEX_KEY = "translationCacheIndexV1";
 
 function getStoredCache(storageData) {
   return Object.fromEntries(Object.entries(storageData)
@@ -79,6 +81,21 @@ function createLengthResponse() {
   };
 }
 
+function createFinishReasonResponse(finishReason) {
+  return {
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        choices: [{
+          finish_reason: finishReason,
+          message: { content: "" }
+        }]
+      };
+    }
+  };
+}
+
 function createTemporaryErrorResponse() {
   return {
     ok: false,
@@ -93,12 +110,15 @@ function createHarness({
   browserProtocol = "chrome-extension:",
   detectLanguage,
   fetchImpl,
+  now,
   sha256HexImpl,
   storage = {},
   storageAccessError,
   storageAccessSupported = true,
+  storageGet,
   storageRemove,
   storageSet,
+  setTimeoutImpl,
   tabGet,
   tabSendMessage
 }) {
@@ -168,6 +188,11 @@ function createHarness({
       local: {
         async get(key) {
           storageGetKeys.push(key);
+          const overridden = await storageGet?.(key, storageData);
+
+          if (overridden !== undefined) {
+            return overridden;
+          }
 
           if (typeof key === "string") {
             return { [key]: storageData[key] };
@@ -233,6 +258,13 @@ function createHarness({
 
   const context = {
     AbortController,
+    Date: now
+      ? class HarnessDate extends Date {
+        static now() {
+          return now();
+        }
+      }
+      : Date,
     TextEncoder,
     URL,
     WeakRef,
@@ -242,7 +274,7 @@ function createHarness({
     crypto: webcrypto,
     fetch: fetchImpl,
     setTimeout(callback, milliseconds, ...args) {
-      const timer = setTimeout(callback, milliseconds, ...args);
+      const timer = (setTimeoutImpl || setTimeout)(callback, milliseconds, ...args);
       timer.unref?.();
       return timer;
     }
@@ -301,7 +333,11 @@ test("content settings do not load the translation cache", async () => {
   const harness = createHarness({
     fetchImpl: async () => createResponse([]),
     storage: {
-      settingsV1: { siteRules: { "https://example.com": "always" } },
+      settingsV1: {
+        providerDataConsentVersion: 1,
+        siteRules: { "https://example.com": "always" },
+        version: 4
+      },
       translationCacheV1: { one: { translation: "Один" } }
     }
   });
@@ -334,6 +370,386 @@ test("content settings do not load the translation cache", async () => {
   assert.equal(Object.keys(getStoredCache(harness.storageData)).length, 1);
 });
 
+test("cold cache lookup reads only the index and calculated phrase key", async () => {
+  const text = "Indexed phrase";
+  const identity = translationCore.createCacheIdentity({
+    context: "interface:button",
+    kind: "interface",
+    model: "deepseek-v4-flash",
+    protectedTerms: [],
+    provider: "deepseek",
+    sourceLanguage: "auto",
+    targetLanguage: "ru",
+    text
+  });
+  const cacheKey = await translationCore.sha256Hex(identity);
+  const entry = {
+    identity,
+    lastUsed: Date.now(),
+    translation: "Индексированная фраза"
+  };
+  const index = {
+    entries: {
+      [cacheKey]: {
+        bytes: translationCore.estimateCacheEntryBytes(cacheKey, entry, CACHE_ENTRY_PREFIX),
+        lastUsed: entry.lastUsed
+      }
+    },
+    version: 1
+  };
+  let fetchCount = 0;
+  const harness = createHarness({
+    async fetchImpl() {
+      fetchCount += 1;
+      return createResponse([]);
+    },
+    storage: {
+      [`${CACHE_ENTRY_PREFIX}${cacheKey}`]: entry,
+      [CACHE_INDEX_KEY]: index
+    }
+  });
+  const result = await harness.send({
+    type: "translateBatch",
+    sourceLanguage: "auto",
+    items: translationItem(text)
+  }, contentSender());
+  const settings = await harness.send({
+    type: "getSettings",
+    includeCacheEntries: true
+  });
+  const exactCacheBytes = new TextEncoder().encode(JSON.stringify({
+    [`${CACHE_ENTRY_PREFIX}${cacheKey}`]: entry,
+    [CACHE_INDEX_KEY]: index
+  })).byteLength;
+
+  assert.equal(result.translations[0].text, "Индексированная фраза");
+  assert.equal(fetchCount, 0);
+  assert.equal(harness.storageGetKeys.includes(null), false);
+  assert.ok(harness.storageGetKeys.some((keys) => (
+    Array.isArray(keys) && keys.includes(`${CACHE_ENTRY_PREFIX}${cacheKey}`)
+  )));
+  assert.equal(settings.cacheBytes, exactCacheBytes);
+});
+
+test("does not restore a cache entry pruned during its delayed storage read", async () => {
+  const text = "Delayed indexed phrase";
+  const identity = translationCore.createCacheIdentity({
+    context: "interface:button",
+    kind: "interface",
+    model: "deepseek-v4-flash",
+    protectedTerms: [],
+    provider: "deepseek",
+    sourceLanguage: "auto",
+    targetLanguage: "ru",
+    text
+  });
+  const cacheKey = "key-0";
+  const entry = {
+    identity,
+    lastUsed: 0,
+    translation: "Устаревшая фраза"
+  };
+  const indexEntries = Object.fromEntries(Array.from({ length: 101 }, (_, index) => {
+    const key = `key-${index}`;
+    const indexedEntry = index === 0
+      ? entry
+      : { identity: `identity-${index}`, lastUsed: index, translation: `translation-${index}` };
+    return [
+      key,
+      {
+        bytes: translationCore.estimateCacheEntryBytes(key, indexedEntry, CACHE_ENTRY_PREFIX),
+        lastUsed: index
+      }
+    ];
+  }));
+  let releaseStorageRead;
+  let storageReadStarted;
+  const storageReadGate = new Promise((resolve) => {
+    releaseStorageRead = resolve;
+  });
+  const storageReadReady = new Promise((resolve) => {
+    storageReadStarted = resolve;
+  });
+  let fetchCount = 0;
+  const harness = createHarness({
+    async fetchImpl() {
+      fetchCount += 1;
+      return createFinishReasonResponse("content_filter");
+    },
+    sha256HexImpl: async () => cacheKey,
+    storage: {
+      [`${CACHE_ENTRY_PREFIX}${cacheKey}`]: entry,
+      [CACHE_INDEX_KEY]: { entries: indexEntries, version: 1 },
+      settingsV1: {
+        cacheMaxEntries: 101,
+        providerDataConsentVersion: 1,
+        version: 4
+      }
+    },
+    async storageGet(key, storageData) {
+      if (!Array.isArray(key) || !key.includes(`${CACHE_ENTRY_PREFIX}${cacheKey}`)) {
+        return undefined;
+      }
+
+      const result = { [`${CACHE_ENTRY_PREFIX}${cacheKey}`]: storageData[
+        `${CACHE_ENTRY_PREFIX}${cacheKey}`
+      ] };
+      storageReadStarted();
+      await storageReadGate;
+      return result;
+    }
+  });
+  const translation = harness.send({
+    type: "translateBatch",
+    sourceLanguage: "auto",
+    items: translationItem(text)
+  }, contentSender());
+  await storageReadReady;
+  const settings = await harness.send({
+    type: "updateSettings",
+    includeCacheEntries: true,
+    settings: { cacheMaxEntries: 100 }
+  });
+  releaseStorageRead();
+
+  await assert.rejects(translation, /content filter/u);
+  assert.equal(fetchCount, 1);
+  assert.equal(settings.cacheEntries, 100);
+  assert.equal(harness.storageData[CACHE_INDEX_DIRTY_KEY], true);
+  assert.equal(Object.hasOwn(harness.storageData, `${CACHE_ENTRY_PREFIX}${cacheKey}`), false);
+});
+
+test("cache pruning includes serialized index overhead in the hard byte limit", async () => {
+  const cacheKey = "a".repeat(64);
+  const fixedEntry = { identity: "i", lastUsed: 1, translation: "" };
+  const fixedBytes = translationCore.estimateCacheEntryBytes(
+    cacheKey,
+    fixedEntry,
+    CACHE_ENTRY_PREFIX
+  );
+  const entry = {
+    ...fixedEntry,
+    translation: "x".repeat(translationCore.MAX_CACHE_BYTES - fixedBytes - 12)
+  };
+  const entryBytes = translationCore.estimateCacheEntryBytes(
+    cacheKey,
+    entry,
+    CACHE_ENTRY_PREFIX
+  );
+  const index = {
+    entries: {
+      [cacheKey]: { bytes: entryBytes, lastUsed: 1 }
+    },
+    version: 1
+  };
+  const dataBytes = 2 + entryBytes;
+  const totalBytes = new TextEncoder().encode(JSON.stringify({
+    [`${CACHE_ENTRY_PREFIX}${cacheKey}`]: entry,
+    [CACHE_INDEX_KEY]: index
+  })).byteLength;
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      [`${CACHE_ENTRY_PREFIX}${cacheKey}`]: entry,
+      [CACHE_INDEX_KEY]: index,
+      settingsV1: {
+        providerDataConsentVersion: 1,
+        version: 4
+      }
+    }
+  });
+  const settings = await harness.send({
+    type: "getSettings",
+    includeCacheEntries: true
+  });
+
+  assert.ok(dataBytes < translationCore.MAX_CACHE_BYTES);
+  assert.ok(totalBytes > translationCore.MAX_CACHE_BYTES);
+  assert.equal(settings.cacheEntries, 0);
+  assert.equal(Object.hasOwn(harness.storageData, `${CACHE_ENTRY_PREFIX}${cacheKey}`), false);
+});
+
+test("reports persisted index bytes until a pruned cache index is flushed", async () => {
+  const cache = Object.fromEntries(Array.from({ length: 101 }, (_, index) => {
+    const key = `${String(index).padStart(3, "0")}-${"a".repeat(60)}`;
+    return [
+      key,
+      {
+        identity: `identity-${index}`,
+        lastUsed: index,
+        translation: `translation-${index}`
+      }
+    ];
+  }));
+  const index = {
+    entries: Object.fromEntries(Object.entries(cache).map(([key, entry]) => [
+      key,
+      {
+        bytes: translationCore.estimateCacheEntryBytes(key, entry, CACHE_ENTRY_PREFIX),
+        lastUsed: entry.lastUsed
+      }
+    ])),
+    version: 1
+  };
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      ...Object.fromEntries(Object.entries(cache).map(([key, entry]) => [
+        `${CACHE_ENTRY_PREFIX}${key}`,
+        entry
+      ])),
+      [CACHE_INDEX_KEY]: index,
+      settingsV1: {
+        cacheMaxEntries: 100,
+        providerDataConsentVersion: 1,
+        version: 4
+      }
+    }
+  });
+  const settings = await harness.send({
+    type: "getSettings",
+    includeCacheEntries: true
+  });
+  const physicalCache = Object.fromEntries(Object.entries(harness.storageData)
+    .filter(([key]) => (
+      key === CACHE_INDEX_KEY
+      || key === CACHE_INDEX_DIRTY_KEY
+      || key.startsWith(CACHE_ENTRY_PREFIX)
+    )));
+  const physicalBytes = new TextEncoder().encode(JSON.stringify(physicalCache)).byteLength;
+
+  assert.equal(settings.cacheEntries, 100);
+  assert.equal(settings.cacheBytes, physicalBytes);
+  assert.equal(harness.storageData[CACHE_INDEX_DIRTY_KEY], true);
+});
+
+test("clears a legacy cache after its migration write fails", async () => {
+  let migrationAttempted = false;
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      translationCacheV1: {
+        legacy: {
+          identity: "legacy-identity",
+          lastUsed: 1,
+          translation: "Старый перевод"
+        }
+      }
+    },
+    async storageSet(value, storageData) {
+      if (!migrationAttempted
+        && Object.keys(value).some((key) => key.startsWith(CACHE_ENTRY_PREFIX))) {
+        migrationAttempted = true;
+        throw new Error("Legacy migration failed.");
+      }
+
+      Object.assign(storageData, value);
+    }
+  });
+
+  await assert.rejects(
+    harness.send({ type: "getCacheStats" }),
+    /Legacy migration failed/u
+  );
+  await harness.send({ type: "clearCache" });
+
+  assert.equal(migrationAttempted, true);
+  assert.equal(Object.hasOwn(harness.storageData, "translationCacheV1"), false);
+  assert.deepEqual({ ...harness.storageData[CACHE_INDEX_KEY].entries }, {});
+  assert.equal(Object.keys(getStoredCache(harness.storageData)).length, 0);
+});
+
+test("retries cache initialization in the same background after a migration write fails", async () => {
+  let migrationAttempts = 0;
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      translationCacheV1: {
+        legacy: {
+          identity: "legacy-identity",
+          lastUsed: 1,
+          translation: "Старый перевод"
+        }
+      }
+    },
+    async storageSet(value, storageData) {
+      if (Object.keys(value).some((key) => key.startsWith(CACHE_ENTRY_PREFIX))) {
+        migrationAttempts += 1;
+
+        if (migrationAttempts === 1) {
+          throw new Error("Legacy migration failed.");
+        }
+      }
+
+      Object.assign(storageData, value);
+    }
+  });
+
+  await assert.rejects(
+    harness.send({ type: "getCacheStats" }),
+    /Legacy migration failed/u
+  );
+  const stats = await harness.send({ type: "getCacheStats" });
+
+  assert.equal(stats.cacheEntries, 1);
+  assert.equal(migrationAttempts, 2);
+  assert.equal(Object.hasOwn(harness.storageData, "translationCacheV1"), false);
+});
+
+test("retries legacy cache cleanup in the same background after its migration write succeeds", async () => {
+  let legacyRemoveAttempts = 0;
+  const storageRemove = async (keys, storageData) => {
+    const storageKeys = Array.isArray(keys) ? keys : [keys];
+
+    if (storageKeys.includes("translationCacheV1")) {
+      legacyRemoveAttempts += 1;
+
+      if (legacyRemoveAttempts === 1) {
+        throw new Error("Legacy cleanup failed.");
+      }
+    }
+
+    for (const storageKey of storageKeys) {
+      delete storageData[storageKey];
+    }
+  };
+  const firstHarness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      translationCacheV1: {
+        legacy: {
+          identity: "legacy-identity",
+          lastUsed: 1,
+          translation: "Старый перевод"
+        }
+      }
+    },
+    storageRemove
+  });
+
+  await assert.rejects(
+    firstHarness.send({ type: "getCacheStats" }),
+    /Legacy cleanup failed/u
+  );
+  assert.equal(Object.hasOwn(firstHarness.storageData, "translationCacheV1"), true);
+  assert.equal(Object.hasOwn(firstHarness.storageData, CACHE_INDEX_KEY), true);
+  assert.equal(
+    Object.hasOwn(firstHarness.storageData, `${CACHE_ENTRY_PREFIX}legacy`),
+    true
+  );
+
+  const stats = await firstHarness.send({ type: "getCacheStats" });
+
+  assert.equal(stats.cacheEntries, 1);
+  assert.equal(legacyRemoveAttempts, 2);
+  assert.equal(Object.hasOwn(firstHarness.storageData, "translationCacheV1"), false);
+  assert.equal(firstHarness.storageGetKeys.includes(null), true);
+  assert.deepEqual(
+    [...firstHarness.storageGetKeys.slice(-1)[0]],
+    [CACHE_INDEX_KEY, CACHE_INDEX_DIRTY_KEY, "translationCacheV1"]
+  );
+});
+
 test("migrates the legacy default cache size to 16,000 phrases", async () => {
   const harness = createHarness({
     fetchImpl: async () => createResponse([]),
@@ -347,7 +763,8 @@ test("migrates the legacy default cache size to 16,000 phrases", async () => {
 
   assert.equal(response.settings.cacheMaxEntries, 16000);
   assert.equal(harness.storageData.settingsV1.cacheMaxEntries, 16000);
-  assert.equal(harness.storageData.settingsV1.version, 3);
+  assert.equal(harness.storageData.settingsV1.providerDataConsentVersion, 1);
+  assert.equal(harness.storageData.settingsV1.version, 4);
 });
 
 test("preserves an explicit 8,000 phrase cache limit from settings version 2", async () => {
@@ -364,7 +781,57 @@ test("preserves an explicit 8,000 phrase cache limit from settings version 2", a
 
   assert.equal(response.settings.cacheMaxEntries, 8000);
   assert.equal(harness.storageData.settingsV1.cacheMaxEntries, 8000);
-  assert.equal(harness.storageData.settingsV1.version, 3);
+  assert.equal(harness.storageData.settingsV1.providerDataConsentVersion, 1);
+  assert.equal(harness.storageData.settingsV1.version, 4);
+});
+
+test("serializes lazy settings migration with concurrent settings updates", async () => {
+  let markMigrationStarted;
+  const migrationStarted = new Promise((resolve) => {
+    markMigrationStarted = resolve;
+  });
+  let migrationPaused = false;
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      settingsV1: {
+        providerDataConsentVersion: 0,
+        siteRules: {},
+        targetLanguage: "ru",
+        version: 3
+      }
+    },
+    async storageSet(value, storageData) {
+      if (!migrationPaused
+        && value.settingsV1?.version === 4
+        && value.settingsV1?.targetLanguage === "ru") {
+        migrationPaused = true;
+        markMigrationStarted();
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      Object.assign(storageData, value);
+    }
+  });
+  const settingsRead = harness.send({ type: "getSettings" });
+  await migrationStarted;
+  const settingsUpdate = harness.send({
+    type: "updateSettings",
+    settings: {
+      siteRules: { "https://example.com": "never" },
+      targetLanguage: "en"
+    }
+  });
+
+  await Promise.all([settingsRead, settingsUpdate]);
+
+  assert.equal(harness.storageData.settingsV1.providerDataConsentVersion, 1);
+  assert.equal(harness.storageData.settingsV1.targetLanguage, "en");
+  assert.equal(harness.storageData.settingsV1.version, 4);
+  assert.deepEqual(
+    { ...harness.storageData.settingsV1.siteRules },
+    { "https://example.com": "never" }
+  );
 });
 
 test("resolves the global translation view and per-site overrides", async () => {
@@ -412,7 +879,7 @@ test("opens onboarding once for a new installation", async () => {
   await harness.install({ reason: "install", temporary: false });
 
   assert.equal(harness.storageData.settingsV1.cacheMaxEntries, 16000);
-  assert.equal(harness.storageData.onboardingShownVersion, 3);
+  assert.equal(harness.storageData.onboardingShownVersion, 4);
   assert.equal(harness.createdTabs.length, 1);
   assert.equal(
     harness.createdTabs[0].url,
@@ -637,6 +1104,12 @@ test("continues in Firefox when storage access levels are unavailable", async ()
   const harness = createHarness({
     browserProtocol: "moz-extension:",
     fetchImpl: async () => createResponse([]),
+    storage: {
+      settingsV1: {
+        providerDataConsentVersion: 1,
+        version: 4
+      }
+    },
     storageAccessSupported: false
   });
 
@@ -990,6 +1463,151 @@ test("bounds provider HTTP retries", async () => {
   assert.equal(fetchCount, 3);
 });
 
+test("allows the first provider request to use the full translation deadline", async () => {
+  const timeoutDurations = [];
+  const harness = createHarness({
+    async fetchImpl() {
+      return createResponse([{ id: "0", text: "Перевод в пределах срока" }]);
+    },
+    now: () => 1000,
+    setTimeoutImpl(callback, milliseconds, ...args) {
+      timeoutDurations.push(milliseconds);
+      return setTimeout(callback, milliseconds, ...args);
+    }
+  });
+  const result = await harness.send({
+    type: "translateBatch",
+    sourceLanguage: "auto",
+    items: translationItem("Deadline-sized phrase")
+  }, contentSender());
+
+  assert.equal(result.translations[0].text, "Перевод в пределах срока");
+  assert.equal(timeoutDurations.includes(28000), true);
+  assert.equal(timeoutDurations.includes(18000), false);
+});
+
+test("does not retry a provider request after the total deadline timeout", async () => {
+  let currentTime = 1000;
+  let fetchCount = 0;
+  const timeoutDurations = [];
+  const harness = createHarness({
+    fetchImpl(_url, options) {
+      fetchCount += 1;
+      return new Promise((resolve, reject) => {
+        const rejectTimeout = () => {
+          const error = new Error("Aborted");
+          error.name = "AbortError";
+          reject(error);
+        };
+
+        if (options.signal.aborted) {
+          rejectTimeout();
+        } else {
+          options.signal.addEventListener("abort", rejectTimeout, { once: true });
+        }
+      });
+    },
+    now: () => currentTime,
+    setTimeoutImpl(callback, milliseconds, ...args) {
+      timeoutDurations.push(milliseconds);
+
+      if (milliseconds === 28000) {
+        queueMicrotask(() => {
+          currentTime += milliseconds;
+          callback(...args);
+        });
+      }
+
+      return {};
+    }
+  });
+
+  await assert.rejects(
+    harness.send({
+      type: "translateBatch",
+      persistCache: false,
+      sourceLanguage: "auto",
+      items: translationItem("Slow provider phrase")
+    }, contentSender()),
+    /timed out/u
+  );
+  assert.equal(fetchCount, 1);
+  assert.deepEqual(timeoutDurations, [28000]);
+});
+
+test("honors Retry-After before retrying with jitter", async () => {
+  const attempts = [];
+  const harness = createHarness({
+    async fetchImpl() {
+      attempts.push(Date.now());
+
+      if (attempts.length === 1) {
+        return {
+          headers: {
+            get(name) {
+              return name.toLowerCase() === "retry-after" ? "0.05" : null;
+            }
+          },
+          ok: false,
+          status: 429
+        };
+      }
+
+      return createResponse([{ id: "0", text: "Повтор после паузы" }]);
+    }
+  });
+  const result = await harness.send({
+    type: "translateBatch",
+    sourceLanguage: "auto",
+    items: translationItem("Retry after phrase")
+  }, contentSender());
+
+  assert.equal(result.translations[0].text, "Повтор после паузы");
+  assert.equal(attempts.length, 2);
+  assert.ok(attempts[1] - attempts[0] >= 45);
+});
+
+test("opens a short provider circuit only after repeated completed transient failures", async () => {
+  let fetchCount = 0;
+  const harness = createHarness({
+    async fetchImpl() {
+      fetchCount += 1;
+      return {
+        headers: {
+          get(name) {
+            return name.toLowerCase() === "retry-after" ? "60" : null;
+          }
+        },
+        ok: false,
+        status: 503
+      };
+    }
+  });
+
+  for (let index = 0; index < 3; index += 1) {
+    await assert.rejects(
+      harness.send({
+        type: "translateBatch",
+        persistCache: false,
+        sourceLanguage: "auto",
+        items: translationItem(`Circuit failure ${index}`)
+      }, contentSender()),
+      /temporarily returned HTTP 503/u
+    );
+  }
+
+  await assert.rejects(
+    harness.send({
+      type: "translateBatch",
+      persistCache: false,
+      sourceLanguage: "auto",
+      items: translationItem("Circuit blocked request")
+    }, contentSender()),
+    /temporarily unavailable after repeated failures/u
+  );
+  assert.equal(fetchCount, 3);
+});
+
 test("cancels active provider requests for the requesting frame without retrying", async () => {
   let markStarted;
   let fetchCount = 0;
@@ -1138,6 +1756,28 @@ test("settings refreshes consume a pending SPA rescan without stale timers", () 
   assert.match(handler, /const startedTranslation = await applyPolicy[\s\S]*finishRouteRescan\(startedTranslation\);/u);
 });
 
+test("refreshes policy after a suspended page is restored from the back-forward cache", () => {
+  const activeStart = contentSource.indexOf("function isTranslationViewActive()");
+  const activeEnd = contentSource.indexOf("function createWeakReference(", activeStart);
+  const activeHandler = contentSource.slice(activeStart, activeEnd);
+  const pageShowStart = contentSource.indexOf("function handlePageShow()");
+  const pageShowEnd = contentSource.indexOf("function handleViewportMovement()", pageShowStart);
+  const pageShowHandler = contentSource.slice(pageShowStart, pageShowEnd);
+
+  assert.match(activeHandler, /&& !pageSuspended/u);
+  assert.match(activeHandler, /&& activePolicyRefreshCount === 0/u);
+  assert.match(contentSource, /window\.addEventListener\("pagehide", \(\) => \{\s+pageSuspended = true;/u);
+  assert.match(
+    pageShowHandler,
+    /if \(wasSuspended\) \{\s+checkRouteChange\(\);\s+pageSuspended = false;\s+void refreshPolicy\(\);/u
+  );
+  assert.match(contentSource, /activePolicyRefreshCount \+= 1;/u);
+  assert.match(
+    contentSource,
+    /activePolicyRefreshCount = Math\.max\(0, activePolicyRefreshCount - 1\);[\s\S]*if \(activePolicyRefreshCount === 0\)/u
+  );
+});
+
 test("stops page observers when refreshing settings fails", () => {
   const handlerStart = contentSource.indexOf("async function refreshPolicy()");
   const handlerEnd = contentSource.indexOf("function checkRouteChange()", handlerStart);
@@ -1165,7 +1805,7 @@ test("starts one-time translation and route monitoring after a manual retry", ()
   assert.match(handler, /if \(message\?\.type === "translateNow"\) \{\s+return enableTranslation\(\);/u);
 });
 
-test("discovers brand terms before translation batches can leave the page", () => {
+test("discovers brand terms before each scan queues its content", () => {
   const scanStart = contentSource.indexOf("function scanDocument()");
   const scanEnd = contentSource.indexOf("function scanSubtree(", scanStart);
   const documentScan = contentSource.slice(scanStart, scanEnd);
@@ -1176,10 +1816,32 @@ test("discovers brand terms before translation batches can leave the page", () =
   assert.match(documentScan, /let scanPhase = "brands";/u);
   assert.match(documentScan, /scanPhase === "brands"[\s\S]*collectBrandNode\(node\)/u);
   assert.match(contentSource, /const brandElement = findClosestTextKindElement\(element, "brand-name"\);/u);
+  assert.match(takeBatch, /const termIndex = getProtectedTermIndex\(\);/u);
   assert.match(takeBatch, /segment\.protectedTerms = selectProtectedTerms\(/u);
   assert.ok((contentSource.match(/selectProtectedTerms\(/gu) || []).length >= 2);
   assert.match(contentSource, /const textKind = getInheritedTextKind\(node\.parentElement\);/u);
-  assert.match(contentSource, /activeBrandScanCount > 0/u);
+  assert.match(contentSource, /activeBrandScanCount \+= 1;/u);
+  assert.match(contentSource, /activeBrandScanCount = Math\.max\(0, activeBrandScanCount - 1\);/u);
+  assert.match(contentSource, /while \(activeBrandScanCount === 0[\s\S]*pendingSegments\.size > 0\)/u);
+  assert.match(contentSource, /if \(activeBrandScanCount > 0[\s\S]*pendingSegments\.size === 0\)/u);
+  assert.match(
+    contentSource,
+    /if \(node\?\.nodeType === Node\.TEXT_NODE && !hasMeaningfulText\(node\.nodeValue\)\) \{\s+return;/u
+  );
+});
+
+test("counts filtered text and element traversal inside scan budgets", () => {
+  const filterStart = contentSource.indexOf("function acceptScanNode(");
+  const filterEnd = contentSource.indexOf("function observeRoot(", filterStart);
+  const filter = contentSource.slice(filterStart, filterEnd);
+  const sampleStart = contentSource.indexOf("async function getLanguageSample()");
+  const sampleEnd = contentSource.indexOf("async function detectPageLanguage()", sampleStart);
+  const sample = contentSource.slice(sampleStart, sampleEnd);
+
+  assert.match(filter, /shouldPruneScanNode\(node, Node\.ELEMENT_NODE\)/u);
+  assert.doesNotMatch(filter, /node\.nodeType === Node\.TEXT_NODE/u);
+  assert.match(sample, /NodeFilter\.SHOW_ELEMENT \| NodeFilter\.SHOW_TEXT/u);
+  assert.match(sample, /if \(node\.nodeType === Node\.TEXT_NODE/u);
 });
 
 test("cancels stale translation requests when pending page work is cleared", () => {
@@ -1188,7 +1850,7 @@ test("cancels stale translation requests when pending page work is cleared", () 
   const handler = contentSource.slice(handlerStart, handlerEnd);
 
   assert.match(handler, /cancelActiveTranslations\(\);/u);
-  assert.match(contentSource, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*cancelActiveTranslations\(\);/u);
+  assert.match(contentSource, /window\.addEventListener\("pagehide", \(\) => \{[\s\S]*clearPending\(\);/u);
 });
 
 test("switches all page views without destroying translation records", () => {
@@ -1530,13 +2192,16 @@ test("concurrent identical cache misses share one API request while motion deliv
   assert.equal(first.cacheHits + second.cacheHits, 1);
 });
 
-test("persists only changed cache entries after each translation batch", async () => {
+test("persists changed entries without rewriting the full index after each batch", async () => {
   const cacheWrites = [];
   const harness = createHarness({
     async fetchImpl(_url, options) {
       const request = JSON.parse(options.body);
       const payload = JSON.parse(request.messages[1].content);
       return createResponse([{ id: "0", text: `Перевод ${payload.items[0].text}` }]);
+    },
+    storage: {
+      [CACHE_INDEX_KEY]: { entries: {}, version: 1 }
     },
     async storageSet(value, storageData) {
       const keys = Object.keys(value);
@@ -1553,8 +2218,221 @@ test("persists only changed cache entries after each translation batch", async (
   await harness.send({ type: "translateBatch", sourceLanguage: "auto", items: translationItem("Second phrase") });
 
   assert.deepEqual(cacheWrites.map(({ length }) => length), [1, 1]);
+  assert.ok(cacheWrites.every((keys) => !keys.includes(CACHE_INDEX_KEY)));
+  assert.equal(harness.storageData[CACHE_INDEX_DIRTY_KEY], true);
   assert.equal(Object.hasOwn(harness.storageData, "translationCacheV1"), false);
   assert.equal(Object.keys(getStoredCache(harness.storageData)).length, 2);
+});
+
+test("flushes the full cache index once after a burst of entry writes", async () => {
+  let flushCacheIndex;
+  let indexWriteCount = 0;
+  let markerWriteCount = 0;
+  let markIndexWritten;
+  let markIndexCleaned;
+  const indexWritten = new Promise((resolve) => {
+    markIndexWritten = resolve;
+  });
+  const indexCleaned = new Promise((resolve) => {
+    markIndexCleaned = resolve;
+  });
+  const harness = createHarness({
+    async fetchImpl(_url, options) {
+      const request = JSON.parse(options.body);
+      const payload = JSON.parse(request.messages[1].content);
+      return createResponse([{ id: "0", text: `Перевод ${payload.items[0].text}` }]);
+    },
+    setTimeoutImpl(callback, milliseconds, ...args) {
+      const timer = setTimeout(callback, milliseconds, ...args);
+
+      if (milliseconds === 15000) {
+        flushCacheIndex = () => {
+          clearTimeout(timer);
+          callback(...args);
+        };
+      }
+
+      return timer;
+    },
+    storage: {
+      [CACHE_INDEX_KEY]: { entries: {}, version: 1 }
+    },
+    async storageRemove(key, storageData) {
+      const keys = Array.isArray(key) ? key : [key];
+
+      for (const storageKey of keys) {
+        delete storageData[storageKey];
+      }
+
+      if (keys.includes(CACHE_INDEX_DIRTY_KEY)) {
+        markIndexCleaned();
+      }
+    },
+    async storageSet(value, storageData) {
+      Object.assign(storageData, value);
+
+      if (Object.hasOwn(value, CACHE_INDEX_KEY)) {
+        indexWriteCount += 1;
+        markIndexWritten();
+      }
+
+      if (Object.hasOwn(value, CACHE_INDEX_DIRTY_KEY)) {
+        markerWriteCount += 1;
+      }
+    }
+  });
+
+  await harness.send({ type: "translateBatch", sourceLanguage: "auto", items: translationItem("First phrase") });
+  await harness.send({ type: "translateBatch", sourceLanguage: "auto", items: translationItem("Second phrase") });
+
+  assert.equal(indexWriteCount, 0);
+  assert.equal(markerWriteCount, 1);
+  assert.equal(typeof flushCacheIndex, "function");
+  flushCacheIndex();
+  await Promise.all([indexWritten, indexCleaned]);
+
+  assert.equal(indexWriteCount, 1);
+  assert.equal(Object.keys(harness.storageData[CACHE_INDEX_KEY].entries).length, 2);
+  assert.equal(Object.hasOwn(harness.storageData, CACHE_INDEX_DIRTY_KEY), false);
+});
+
+test("flushes cache changes queued while the dirty marker is being removed", async () => {
+  let flushCacheIndex;
+  let releaseFirstCleanup;
+  let markFirstCleanupStarted;
+  let markSecondResponseHandled;
+  let markSecondCleanupFinished;
+  const firstCleanupGate = new Promise((resolve) => {
+    releaseFirstCleanup = resolve;
+  });
+  const firstCleanupStarted = new Promise((resolve) => {
+    markFirstCleanupStarted = resolve;
+  });
+  const secondResponseHandled = new Promise((resolve) => {
+    markSecondResponseHandled = resolve;
+  });
+  const secondCleanupFinished = new Promise((resolve) => {
+    markSecondCleanupFinished = resolve;
+  });
+  let cleanupCount = 0;
+  const harness = createHarness({
+    async fetchImpl(_url, options) {
+      const request = JSON.parse(options.body);
+      const payload = JSON.parse(request.messages[1].content);
+      const response = createResponse([{ id: "0", text: `Перевод ${payload.items[0].text}` }]);
+
+      if (payload.items[0].text === "Second phrase") {
+        const readBody = response.json;
+        response.json = async () => {
+          const body = await readBody();
+          setImmediate(markSecondResponseHandled);
+          return body;
+        };
+      }
+
+      return response;
+    },
+    setTimeoutImpl(callback, milliseconds, ...args) {
+      const timer = setTimeout(callback, milliseconds, ...args);
+
+      if (milliseconds === 15000) {
+        flushCacheIndex = () => {
+          clearTimeout(timer);
+          callback(...args);
+        };
+      }
+
+      return timer;
+    },
+    storage: {
+      [CACHE_INDEX_KEY]: { entries: {}, version: 1 }
+    },
+    async storageRemove(key, storageData) {
+      const keys = Array.isArray(key) ? key : [key];
+
+      if (keys.includes(CACHE_INDEX_DIRTY_KEY)) {
+        cleanupCount += 1;
+
+        if (cleanupCount === 1) {
+          markFirstCleanupStarted();
+          await firstCleanupGate;
+        }
+      }
+
+      for (const storageKey of keys) {
+        delete storageData[storageKey];
+      }
+
+      if (cleanupCount === 2) {
+        markSecondCleanupFinished();
+      }
+    }
+  });
+
+  await harness.send({ type: "translateBatch", sourceLanguage: "auto", items: translationItem("First phrase") });
+  flushCacheIndex();
+  await firstCleanupStarted;
+  const secondTranslation = harness.send({
+    type: "translateBatch",
+    sourceLanguage: "auto",
+    items: translationItem("Second phrase")
+  });
+  await secondResponseHandled;
+  releaseFirstCleanup();
+  await secondTranslation;
+
+  flushCacheIndex();
+  await secondCleanupFinished;
+
+  assert.equal(cleanupCount, 2);
+  assert.equal(Object.keys(harness.storageData[CACHE_INDEX_KEY].entries).length, 2);
+  assert.equal(Object.hasOwn(harness.storageData, CACHE_INDEX_DIRTY_KEY), false);
+});
+
+test("rebuilds a cache index left dirty by an interrupted deferred flush", async () => {
+  const firstEntry = {
+    identity: "first-identity",
+    lastUsed: 1,
+    translation: "Первый"
+  };
+  const secondEntry = {
+    identity: "second-identity",
+    lastUsed: 2,
+    translation: "Второй"
+  };
+  let shardWriteCount = 0;
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      [`${CACHE_ENTRY_PREFIX}first`]: firstEntry,
+      [`${CACHE_ENTRY_PREFIX}second`]: secondEntry,
+      [CACHE_INDEX_DIRTY_KEY]: true,
+      [CACHE_INDEX_KEY]: {
+        entries: {
+          first: {
+            bytes: translationCore.estimateCacheEntryBytes("first", firstEntry, CACHE_ENTRY_PREFIX),
+            lastUsed: 1
+          }
+        },
+        version: 1
+      }
+    },
+    async storageSet(value, storageData) {
+      shardWriteCount += Object.keys(value)
+        .filter((key) => key.startsWith(CACHE_ENTRY_PREFIX))
+        .length;
+      Object.assign(storageData, value);
+    }
+  });
+  const stats = await harness.send({ type: "getCacheStats" });
+
+  assert.equal(stats.cacheEntries, 2);
+  assert.equal(shardWriteCount, 0);
+  assert.deepEqual(
+    Object.keys(harness.storageData[CACHE_INDEX_KEY].entries).sort(),
+    ["first", "second"]
+  );
+  assert.equal(Object.hasOwn(harness.storageData, CACHE_INDEX_DIRTY_KEY), false);
 });
 
 test("retries an incremental cache write after a transient storage failure", async () => {
@@ -1732,6 +2610,71 @@ test("retries one empty provider response without splitting the batch", async ()
 
   assert.equal(response.translations[0].text, "Переведённый текст");
   assert.equal(fetchCount, 2);
+});
+
+test("retries a transient provider finish reason once", async () => {
+  let fetchCount = 0;
+  const harness = createHarness({
+    async fetchImpl() {
+      fetchCount += 1;
+      return fetchCount === 1
+        ? createFinishReasonResponse("server_error")
+        : createResponse([{ id: "0", text: "Успешный повтор" }]);
+    }
+  });
+  const result = await harness.send({
+    type: "translateBatch",
+    sourceLanguage: "auto",
+    items: translationItem("Transient finish")
+  }, contentSender());
+
+  assert.equal(result.translations[0].text, "Успешный повтор");
+  assert.equal(fetchCount, 2);
+});
+
+test("surfaces provider content filtering without retrying", async () => {
+  let fetchCount = 0;
+  const harness = createHarness({
+    async fetchImpl() {
+      fetchCount += 1;
+      return createFinishReasonResponse("content_filter");
+    }
+  });
+
+  await assert.rejects(
+    harness.send({
+      type: "translateBatch",
+      sourceLanguage: "auto",
+      items: translationItem("Filtered phrase")
+    }, contentSender()),
+    /content filter/u
+  );
+  assert.equal(fetchCount, 1);
+});
+
+test("shares one total deadline across transient provider response retries", async () => {
+  let currentTime = 1000;
+  let fetchCount = 0;
+  const harness = createHarness({
+    async fetchImpl() {
+      fetchCount += 1;
+      currentTime += 28001;
+      return createFinishReasonResponse("server_error");
+    },
+    now() {
+      return currentTime;
+    }
+  });
+
+  await assert.rejects(
+    harness.send({
+      type: "translateBatch",
+      sourceLanguage: "auto",
+      items: translationItem("Deadline phrase")
+    }, contentSender()),
+    /deadline expired/u
+  );
+  assert.equal(fetchCount, 1);
 });
 
 test("bounds empty provider response retries", async () => {
@@ -2062,6 +3005,141 @@ test("loads and filters models for each configured provider", async () => {
   assert.deepEqual(Array.from(response.models), ["gpt-5.6-luna", "gpt-5.6-sol"]);
 });
 
+test("requires explicit versioned consent before saving or probing a new provider key", async () => {
+  let fetchCount = 0;
+  const harness = createHarness({
+    async fetchImpl() {
+      fetchCount += 1;
+      return createResponse([]);
+    },
+    storage: {
+      providerApiKeysV1: {},
+      settingsV1: {
+        providerDataConsentVersion: 0,
+        version: 4
+      }
+    }
+  });
+
+  await assert.rejects(
+    harness.send({
+      type: "configureProvider",
+      apiKey: "candidate-deepseek-api-key-for-background",
+      provider: "deepseek",
+      targetLanguage: "ru"
+    }),
+    /Confirm the current provider data disclosure/u
+  );
+  await assert.rejects(
+    harness.send({
+      type: "updateProviderKey",
+      action: "set",
+      apiKey: "candidate-deepseek-api-key-for-background",
+      provider: "deepseek"
+    }),
+    /Confirm the current provider data disclosure/u
+  );
+
+  assert.equal(fetchCount, 0);
+  assert.equal(harness.storageData.providerApiKeysV1.deepseek, undefined);
+});
+
+test("serializes provider consent with concurrent settings updates", async () => {
+  let releaseProviderWrite;
+  let providerWriteStarted;
+  const providerWriteGate = new Promise((resolve) => {
+    releaseProviderWrite = resolve;
+  });
+  const providerWriteReady = new Promise((resolve) => {
+    providerWriteStarted = resolve;
+  });
+  let providerWritePaused = false;
+  const harness = createHarness({
+    async fetchImpl() {
+      return createResponse([]);
+    },
+    storage: {
+      providerApiKeysV1: {},
+      settingsV1: {
+        providerDataConsentVersion: 0,
+        siteRules: {},
+        targetLanguage: "ru",
+        version: 4
+      }
+    },
+    async storageSet(value, storageData) {
+      if (!providerWritePaused
+        && Object.hasOwn(value, "providerApiKeysV1")
+        && Object.hasOwn(value, "settingsV1")) {
+        providerWritePaused = true;
+        providerWriteStarted();
+        await providerWriteGate;
+      }
+
+      Object.assign(storageData, value);
+    }
+  });
+  const providerUpdate = harness.send({
+    type: "updateProviderKey",
+    action: "set",
+    apiKey: "candidate-deepseek-api-key-for-background",
+    provider: "deepseek",
+    providerDataConsent: true,
+    providerDataConsentVersion: 1
+  });
+  await providerWriteReady;
+  const settingsUpdate = harness.send({
+    type: "updateSettings",
+    settings: {
+      siteRules: { "https://example.com": "never" },
+      targetLanguage: "en"
+    }
+  });
+  releaseProviderWrite();
+  await Promise.all([providerUpdate, settingsUpdate]);
+
+  assert.equal(
+    harness.storageData.providerApiKeysV1.deepseek,
+    "candidate-deepseek-api-key-for-background"
+  );
+  assert.equal(harness.storageData.settingsV1.providerDataConsentVersion, 1);
+  assert.equal(harness.storageData.settingsV1.targetLanguage, "en");
+  assert.deepEqual(
+    { ...harness.storageData.settingsV1.siteRules },
+    { "https://example.com": "never" }
+  );
+});
+
+test("does not contact a provider when stored data consent is missing", async () => {
+  let fetchCount = 0;
+  const harness = createHarness({
+    async fetchImpl() {
+      fetchCount += 1;
+      return createResponse([]);
+    },
+    storage: {
+      providerApiKeysV1: {
+        deepseek: "stored-deepseek-api-key-for-background"
+      },
+      settingsV1: {
+        provider: "deepseek",
+        providerDataConsentVersion: 0,
+        version: 4
+      }
+    }
+  });
+
+  await assert.rejects(
+    harness.send({
+      type: "translateBatch",
+      sourceLanguage: "auto",
+      items: translationItem("Consent-gated phrase")
+    }, contentSender()),
+    /Provider data consent is required/u
+  );
+  assert.equal(fetchCount, 0);
+});
+
 test("tests the selected model against the chat completions endpoint", async () => {
   const requestedUrls = [];
   const harness = createHarness({
@@ -2150,6 +3228,8 @@ test("configures a verified provider and selects its preferred available model",
     type: "configureProvider",
     apiKey: candidateKey,
     provider: "deepseek",
+    providerDataConsent: true,
+    providerDataConsentVersion: 1,
     targetLanguage: "ru"
   });
 
@@ -2161,6 +3241,7 @@ test("configures a verified provider and selects its preferred available model",
   assert.deepEqual(Array.from(response.models), ["deepseek-v4-flash", "deepseek-v4-pro"]);
   assert.equal(harness.storageData.providerApiKeysV1.deepseek, candidateKey);
   assert.equal(harness.storageData.settingsV1.provider, "deepseek");
+  assert.equal(harness.storageData.settingsV1.providerDataConsentVersion, 1);
   assert.equal(harness.storageData.settingsV1.providerModels.deepseek, "deepseek-v4-flash");
   assert.equal(harness.storageData.settingsV1.targetLanguage, "ru");
 });
@@ -2192,6 +3273,8 @@ test("reuses a stored provider key when the onboarding field is blank", async ()
     type: "configureProvider",
     apiKey: "   ",
     provider: "deepseek",
+    providerDataConsent: true,
+    providerDataConsentVersion: 1,
     targetLanguage: "ru"
   });
 
@@ -2245,6 +3328,8 @@ test("preserves settings and other provider keys changed during provider verific
     type: "configureProvider",
     apiKey: candidateKey,
     provider: "deepseek",
+    providerDataConsent: true,
+    providerDataConsentVersion: 1,
     targetLanguage: "ru"
   });
 
@@ -2291,6 +3376,8 @@ test("does not restore a saved provider key changed during verification", async 
       type: "configureProvider",
       apiKey: "",
       provider: "deepseek",
+      providerDataConsent: true,
+      providerDataConsentVersion: 1,
       targetLanguage: "ru"
     }),
     /configuration changed/u
@@ -2336,6 +3423,8 @@ test("does not save a candidate provider key before connection verification succ
       type: "configureProvider",
       apiKey: "invalid-candidate-api-key-for-background",
       provider: "deepseek",
+      providerDataConsent: true,
+      providerDataConsentVersion: 1,
       targetLanguage: "ru"
     }),
     /Invalid API key/u
