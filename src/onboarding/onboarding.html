@@ -3,28 +3,88 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title data-i18n="welcomeTitle">Welcome to Smart Page Translator</title>
+    <title data-i18n="onboardingTitle">Set up translation in one minute</title>
     <link rel="stylesheet" href="onboarding.css">
   </head>
   <body>
     <main class="page">
       <header class="hero">
         <img src="../assets/icon.svg" alt="" width="76" height="76">
-        <p class="eyebrow" data-i18n="welcomeEyebrow">Ready for any page</p>
-        <h1 data-i18n="welcomeTitle">Welcome to Smart Page Translator</h1>
-        <p class="lede" data-i18n="welcomeDescription">Translate complete dynamic pages, keep brands intact, and reuse results from your local cache.</p>
+        <p class="eyebrow" data-i18n="quickSetup">Quick setup</p>
+        <h1 data-i18n="onboardingTitle">Set up translation in one minute</h1>
+        <p class="lede" data-i18n="onboardingDescription">Translation needs your own provider API key. Create one, paste it below, and the extension will choose a suitable model automatically.</p>
       </header>
 
-      <section class="setup" aria-labelledby="quickSetupTitle">
-        <div>
-          <p class="section-label" data-i18n="quickSetup">Quick setup</p>
-          <h2 id="quickSetupTitle" data-i18n="chooseTargetLanguage">Choose your translation language</h2>
+      <form id="setupForm" class="setup" aria-labelledby="quickSetupTitle">
+        <header class="setup-heading">
+          <div>
+            <p class="section-label" data-i18n="requiredSetup">Required setup</p>
+            <h2 id="quickSetupTitle" data-i18n="connectTranslationProvider">Connect a translation provider</h2>
+          </div>
+          <p data-i18n="providerSetupDescription">The extension does not sell translation or include a shared key. Requests are billed directly by the provider you choose.</p>
+        </header>
+
+        <fieldset class="provider-fieldset">
+          <legend data-i18n="chooseProvider">Choose a provider</legend>
+          <div class="provider-options">
+            <label class="provider-card">
+              <input type="radio" name="provider" value="deepseek" checked disabled>
+              <span class="provider-copy">
+                <span class="provider-name">
+                  <strong>DeepSeek</strong>
+                  <small data-i18n="recommended">Recommended</small>
+                </span>
+                <span data-i18n="deepseekSetupDescription">Lowest-cost default with strong translation quality.</span>
+              </span>
+            </label>
+            <label class="provider-card">
+              <input type="radio" name="provider" value="openai" disabled>
+              <span class="provider-copy">
+                <span class="provider-name">
+                  <strong>OpenAI</strong>
+                </span>
+                <span data-i18n="openaiSetupDescription">Use an existing OpenAI API project and its available text models.</span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="setup-fields">
+          <section class="key-step" aria-labelledby="createKeyTitle">
+            <span class="step-number">1</span>
+            <div>
+              <h3 id="createKeyTitle" data-i18n="createProviderKey">Create a provider key</h3>
+              <p data-i18n="createProviderKeyDescription">The official provider page opens in a new tab. Return here after creating the key.</p>
+              <a id="apiKeyLink" class="secondary button-link" href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">
+                <span data-i18n="createApiKey">Create API key</span>
+                <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+          </section>
+
+          <label class="field" for="apiKey">
+            <span class="step-label"><span class="step-number">2</span><span data-i18n="pasteApiKey">Paste the API key</span></span>
+            <input id="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your key here" data-i18n-placeholder="pasteApiKeyPlaceholder" disabled>
+            <small id="keyHint" data-i18n="onboardingKeyHint">The key is saved only after the connection succeeds.</small>
+          </label>
+
+          <label class="field" for="targetLanguage">
+            <span class="step-label"><span class="step-number">3</span><span data-i18n="chooseTargetLanguage">Choose your translation language</span></span>
+            <select id="targetLanguage" disabled></select>
+          </label>
         </div>
-        <label for="targetLanguage">
-          <span data-i18n="targetLanguage">Target language</span>
-          <select id="targetLanguage"></select>
-        </label>
-      </section>
+
+        <aside class="security-note">
+          <strong data-i18n="beforeConnecting">Before connecting</strong>
+          <p data-i18n="onboardingPrivacyDescription">Use a separate API key with a spending limit. The key stays in local extension storage, while text selected for translation is sent to the provider.</p>
+        </aside>
+
+        <div class="setup-actions">
+          <button id="startButton" class="primary" type="submit" data-i18n="checkKeyAndStart" disabled>Check key and start</button>
+          <button id="skipButton" class="quiet" type="button" data-i18n="setUpLater">Set up later</button>
+        </div>
+        <p id="status" role="status" aria-live="polite"></p>
+      </form>
 
       <section class="capabilities" aria-label="Key features" data-i18n-aria-label="keyFeatures">
         <article>
@@ -63,16 +123,15 @@
       </section>
 
       <footer>
-        <p id="status" role="status"></p>
+        <p data-i18n="advancedSetupHint">You can change the provider, model, automation rules, and cache limits later.</p>
         <div class="actions">
-          <button id="pdfButton" class="secondary" type="button" data-i18n="openPdfWorkspace">Open PDF workspace</button>
-          <button id="settingsButton" class="primary" type="button" data-i18n="configureProvider">Configure provider</button>
-          <button id="doneButton" class="quiet" type="button" data-i18n="done">Done</button>
+          <button id="settingsButton" class="secondary" type="button" data-i18n="advancedSettings">Advanced settings</button>
         </div>
       </footer>
     </main>
     <script src="../vendor/browser-polyfill.js"></script>
     <script src="../lib/ui-i18n.js"></script>
+    <script src="../lib/provider-core.js"></script>
     <script src="onboarding.js"></script>
   </body>
 </html>

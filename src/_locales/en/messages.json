@@ -401,6 +401,96 @@
   "quickSetup": {
     "message": "Quick setup"
   },
+  "onboardingTitle": {
+    "message": "Set up translation in one minute"
+  },
+  "onboardingDescription": {
+    "message": "Translation needs your own provider API key. Create one, paste it below, and the extension will choose a suitable model automatically."
+  },
+  "requiredSetup": {
+    "message": "Required setup"
+  },
+  "connectTranslationProvider": {
+    "message": "Connect a translation provider"
+  },
+  "providerSetupDescription": {
+    "message": "The extension does not sell translation or include a shared key. Requests are billed directly by the provider you choose."
+  },
+  "chooseProvider": {
+    "message": "Choose a provider"
+  },
+  "recommended": {
+    "message": "Recommended"
+  },
+  "deepseekSetupDescription": {
+    "message": "Lowest-cost default with strong translation quality."
+  },
+  "openaiSetupDescription": {
+    "message": "Use an existing OpenAI API project and its available text models."
+  },
+  "createProviderKey": {
+    "message": "Create a provider key"
+  },
+  "createProviderKeyDescription": {
+    "message": "The official provider page opens in a new tab. Return here after creating the key."
+  },
+  "createApiKey": {
+    "message": "Create API key"
+  },
+  "createProviderApiKey": {
+    "message": "Create {provider} API key"
+  },
+  "pasteApiKey": {
+    "message": "Paste the API key"
+  },
+  "pasteApiKeyPlaceholder": {
+    "message": "Paste your key here"
+  },
+  "replaceApiKeyPlaceholder": {
+    "message": "Leave blank to use the saved key"
+  },
+  "onboardingKeyHint": {
+    "message": "The key is saved only after the connection succeeds."
+  },
+  "onboardingKeyConfigured": {
+    "message": "{provider} is already connected. Leave this field blank to verify the saved key."
+  },
+  "beforeConnecting": {
+    "message": "Before connecting"
+  },
+  "onboardingPrivacyDescription": {
+    "message": "Use a separate API key with a spending limit. The key stays in local extension storage, while text selected for translation is sent to the provider."
+  },
+  "checkKeyAndStart": {
+    "message": "Check key and start"
+  },
+  "setUpLater": {
+    "message": "Set up later"
+  },
+  "advancedSetupHint": {
+    "message": "You can change the provider, model, automation rules, and cache limits later."
+  },
+  "advancedSettings": {
+    "message": "Advanced settings"
+  },
+  "checkingConnection": {
+    "message": "Checking connection…"
+  },
+  "pasteKeyBeforeContinuing": {
+    "message": "Paste a {provider} API key before continuing."
+  },
+  "checkingProviderConnection": {
+    "message": "Checking {provider}…"
+  },
+  "onboardingKeyStored": {
+    "message": "The {provider} key is stored locally and is never displayed again."
+  },
+  "setupReady": {
+    "message": "{provider} is connected with {model}. Translation is ready."
+  },
+  "setupFailed": {
+    "message": "Could not connect. {message}"
+  },
   "chooseTargetLanguage": {
     "message": "Choose your translation language"
   },

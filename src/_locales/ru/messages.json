@@ -401,6 +401,96 @@
   "quickSetup": {
     "message": "Быстрая настройка"
   },
+  "onboardingTitle": {
+    "message": "Настройте перевод за одну минуту"
+  },
+  "onboardingDescription": {
+    "message": "Для перевода нужен ваш API-ключ. Создайте его, вставьте ниже — расширение автоматически выберет подходящую модель."
+  },
+  "requiredSetup": {
+    "message": "Обязательная настройка"
+  },
+  "connectTranslationProvider": {
+    "message": "Подключите сервис перевода"
+  },
+  "providerSetupDescription": {
+    "message": "Расширение не продаёт перевод и не содержит общего ключа. Запросы оплачиваются напрямую выбранному сервису."
+  },
+  "chooseProvider": {
+    "message": "Выберите сервис"
+  },
+  "recommended": {
+    "message": "Рекомендуется"
+  },
+  "deepseekSetupDescription": {
+    "message": "Самый доступный вариант по умолчанию с хорошим качеством перевода."
+  },
+  "openaiSetupDescription": {
+    "message": "Используйте существующий проект OpenAI и доступные ему текстовые модели."
+  },
+  "createProviderKey": {
+    "message": "Создайте ключ сервиса"
+  },
+  "createProviderKeyDescription": {
+    "message": "Официальная страница сервиса откроется в новой вкладке. После создания ключа вернитесь сюда."
+  },
+  "createApiKey": {
+    "message": "Создать API-ключ"
+  },
+  "createProviderApiKey": {
+    "message": "Создать API-ключ {provider}"
+  },
+  "pasteApiKey": {
+    "message": "Вставьте API-ключ"
+  },
+  "pasteApiKeyPlaceholder": {
+    "message": "Вставьте ключ сюда"
+  },
+  "replaceApiKeyPlaceholder": {
+    "message": "Оставьте пустым, чтобы использовать сохранённый ключ"
+  },
+  "onboardingKeyHint": {
+    "message": "Ключ сохранится только после успешной проверки подключения."
+  },
+  "onboardingKeyConfigured": {
+    "message": "{provider} уже подключён. Оставьте поле пустым, чтобы проверить сохранённый ключ."
+  },
+  "beforeConnecting": {
+    "message": "Перед подключением"
+  },
+  "onboardingPrivacyDescription": {
+    "message": "Используйте отдельный API-ключ с лимитом расходов. Ключ хранится локально, а выбранный для перевода текст отправляется сервису."
+  },
+  "checkKeyAndStart": {
+    "message": "Проверить ключ и начать"
+  },
+  "setUpLater": {
+    "message": "Настроить позже"
+  },
+  "advancedSetupHint": {
+    "message": "Позже можно изменить сервис, модель, правила автоматизации и лимиты кэша."
+  },
+  "advancedSettings": {
+    "message": "Расширенные настройки"
+  },
+  "checkingConnection": {
+    "message": "Проверяем подключение…"
+  },
+  "pasteKeyBeforeContinuing": {
+    "message": "Вставьте API-ключ {provider}, чтобы продолжить."
+  },
+  "checkingProviderConnection": {
+    "message": "Проверяем {provider}…"
+  },
+  "onboardingKeyStored": {
+    "message": "Ключ {provider} хранится локально и больше не отображается."
+  },
+  "setupReady": {
+    "message": "{provider} подключён, выбрана модель {model}. Перевод готов к работе."
+  },
+  "setupFailed": {
+    "message": "Не удалось подключиться. {message}"
+  },
   "chooseTargetLanguage": {
     "message": "Выберите язык перевода"
   },

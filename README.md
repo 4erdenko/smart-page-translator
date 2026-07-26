@@ -11,7 +11,7 @@ Cross-browser Manifest V3 WebExtension for complete, cached website translation.
 - Switches pages between original, translated, and compact bilingual text without another provider request.
 - Translates a focused text field, or selected rich-editor text, only after an explicit context-menu action or keyboard shortcut.
 - Extracts and translates visual text blocks from a local PDF, previews original and translated pages side by side, and downloads a translated copy whose only searchable text layer is the translation.
-- Supports DeepSeek and OpenAI. API keys are entered in Settings and stored in local extension storage; `.env` files and build-time keys are not used.
+- Supports DeepSeek and OpenAI. First-run setup links directly to each provider's official key page, verifies the key before storing it locally, and selects a compatible model automatically; `.env` files and build-time keys are not used.
 - Loads the models available to the configured provider account from its `/models` endpoint and filters out audio, image, embedding, moderation, realtime, and other incompatible models.
 - Applies automatic language rules and per-origin `Always`, `Automatic`, or `Never` policies, including SPA route changes.
 - Translates same-origin frames with the parent website while requiring an explicit `Always` rule for cross-origin frames.
@@ -48,9 +48,9 @@ Chrome:
 2. Open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**.
 3. Select `dist/chrome/`.
 
-Open the extension Settings, select DeepSeek or OpenAI, enter that provider's key, load its model list, and save a model. Temporary Firefox add-ons are removed when Firefox exits; a signed installation is required for dependable persistence across full browser restarts.
+The first-run page guides you to the selected provider's official API-key page, verifies the connection, and selects a compatible model automatically. The same provider, key, and model controls remain available in Settings. Temporary Firefox add-ons are removed when Firefox exits; a signed installation is required for dependable persistence across full browser restarts.
 
-The first installation opens a short onboarding page. Default shortcuts are:
+The first installation opens this setup page automatically. Default shortcuts are:
 
 - `Alt+Shift+P` — toggle original and translated page text.
 - `Alt+Shift+U` — cycle original, translated, and bilingual page views.

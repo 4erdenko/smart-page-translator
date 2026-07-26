@@ -48,7 +48,8 @@ const {
   buildProviderRequest,
   filterProviderModels,
   getSelectedModel,
-  normalizeProviderModels
+  normalizeProviderModels,
+  PROVIDERS
 } = require("../src/lib/provider-core.js");
 
 test("normalizes whitespace and Unicode without changing words", () => {
@@ -281,6 +282,11 @@ test("normalizes per-provider models and preserves the legacy DeepSeek model", (
   const models = normalizeProviderModels({ openai: "gpt-5.6-luna" }, "deepseek-v4-pro");
   assert.equal(models.deepseek, "deepseek-v4-pro");
   assert.equal(getSelectedModel({ provider: "openai", providerModels: models }), "gpt-5.6-luna");
+});
+
+test("keeps official API-key pages with provider definitions", () => {
+  assert.equal(PROVIDERS.deepseek.apiKeyUrl, "https://platform.deepseek.com/api_keys");
+  assert.equal(PROVIDERS.openai.apiKeyUrl, "https://platform.openai.com/api-keys");
 });
 
 test("filters dynamic provider lists to compatible text models", () => {

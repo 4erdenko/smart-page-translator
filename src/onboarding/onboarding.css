@@ -18,6 +18,7 @@ body {
 }
 
 button,
+input,
 select {
   font: inherit;
 }
@@ -25,15 +26,15 @@ select {
 .page {
   width: min(880px, calc(100% - 40px));
   margin: 0 auto;
-  padding: 72px 0 48px;
+  padding: 48px 0;
 }
 
 .hero {
-  max-width: 680px;
+  max-width: 720px;
 }
 
 .hero img {
-  margin-bottom: 30px;
+  margin-bottom: 24px;
   filter: drop-shadow(0 18px 28px rgba(67, 43, 197, 0.2));
   animation: arrive 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -57,9 +58,9 @@ p {
 h1 {
   max-width: 650px;
   margin-bottom: 18px;
-  font-size: clamp(38px, 7vw, 68px);
+  font-size: clamp(38px, 6vw, 58px);
   letter-spacing: -0.055em;
-  line-height: 0.98;
+  line-height: 1;
 }
 
 .lede {
@@ -70,15 +71,30 @@ h1 {
   line-height: 1.48;
 }
 
-.setup,
-.shortcuts {
+.setup {
+  display: grid;
+  gap: 28px;
+  margin-top: 38px;
+  padding: 32px;
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(24px);
+}
+
+.setup-heading {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.8fr);
-  gap: 42px;
-  align-items: end;
-  margin-top: 68px;
-  padding: 32px 0;
-  border-block: 1px solid rgba(0, 0, 0, 0.1);
+  gap: 36px;
+  align-items: start;
+}
+
+.setup-heading > p {
+  margin: 25px 0 0;
+  color: #6e6e73;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .setup h2,
@@ -88,7 +104,129 @@ h1 {
   letter-spacing: -0.035em;
 }
 
-.setup label {
+.provider-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.provider-fieldset legend {
+  margin-bottom: 12px;
+  color: #6e6e73;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.provider-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.provider-card {
+  display: flex;
+  gap: 13px;
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid rgba(0, 0, 0, 0.11);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+}
+
+.provider-card.selected {
+  border-color: #0071e3;
+  background: rgba(0, 113, 227, 0.08);
+  box-shadow: 0 0 0 1px #0071e3;
+}
+
+.provider-card input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: #0071e3;
+}
+
+.provider-copy {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #6e6e73;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.provider-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #1d1d1f;
+  font-size: 16px;
+}
+
+.provider-name small {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #0066cc;
+  background: rgba(0, 113, 227, 0.1);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.setup-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.key-step {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.035);
+}
+
+.key-step h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.key-step p {
+  margin-bottom: 14px;
+  color: #6e6e73;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.step-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-number {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  color: #0066cc;
+  background: rgba(0, 113, 227, 0.11);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.field {
   display: grid;
   gap: 9px;
   color: #6e6e73;
@@ -96,18 +234,85 @@ h1 {
   font-weight: 700;
 }
 
+input[type="password"],
 select {
   width: 100%;
   min-height: 48px;
-  padding: 0 42px 0 15px;
+  padding: 0 15px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 13px;
   color: inherit;
   background: rgba(255, 255, 255, 0.76);
 }
 
+select {
+  padding-right: 42px;
+}
+
+input[type="password"]:focus,
+select:focus {
+  border-color: #0071e3;
+  outline: 3px solid rgba(0, 113, 227, 0.14);
+}
+
+.field small {
+  color: #86868b;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.security-note {
+  padding: 16px 18px;
+  border-left: 3px solid #ff9f0a;
+  border-radius: 5px 13px 13px 5px;
+  background: rgba(255, 159, 10, 0.1);
+}
+
+.security-note strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.security-note p {
+  margin: 0;
+  color: #6e6e73;
+  font-size: 12px;
+  line-height: 1.48;
+}
+
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.setup-actions .primary {
+  min-width: 210px;
+}
+
+#status {
+  min-height: 20px;
+  margin: -12px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+#status[data-state="working"] {
+  color: #0066cc;
+}
+
+#status[data-state="success"] {
+  color: #176e51;
+}
+
+#status[data-state="error"] {
+  color: #a22e44;
+}
+
 .capabilities {
-  margin-top: 18px;
+  margin-top: 34px;
 }
 
 .capabilities article {
@@ -138,8 +343,13 @@ select {
 }
 
 .shortcuts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.8fr);
+  gap: 42px;
   align-items: start;
-  border-top: 0;
+  margin-top: 24px;
+  padding: 32px 0;
+  border-block: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 dl,
@@ -198,10 +408,12 @@ footer {
   padding-top: 26px;
 }
 
-#status {
+footer > p {
+  max-width: 580px;
   margin: 0;
-  color: #1c7c54;
+  color: #6e6e73;
   font-size: 13px;
+  line-height: 1.45;
 }
 
 .actions {
@@ -218,6 +430,25 @@ button {
   border-radius: 12px;
   cursor: pointer;
   font-weight: 700;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .primary {
@@ -248,11 +479,20 @@ button {
     padding-top: 36px;
   }
 
-  .setup,
+  .setup {
+    padding: 24px 20px;
+  }
+
+  .setup-heading,
+  .setup-fields,
+  .provider-options,
   .shortcuts {
     grid-template-columns: 1fr;
-    gap: 22px;
-    margin-top: 44px;
+    gap: 18px;
+  }
+
+  .setup-heading > p {
+    margin-top: 0;
   }
 
   footer {
@@ -282,17 +522,47 @@ button {
   }
 
   .lede,
+  .setup-heading > p,
+  .provider-copy,
+  .key-step p,
+  .security-note p,
+  footer > p,
   .capabilities p,
   dd {
     color: #a1a1a6;
   }
 
-  .setup,
+  .setup {
+    border-color: rgba(255, 255, 255, 0.11);
+    background: rgba(28, 28, 30, 0.82);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  }
+
   .shortcuts,
   .capabilities article {
     border-color: rgba(255, 255, 255, 0.11);
   }
 
+  .provider-card {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(44, 44, 46, 0.76);
+  }
+
+  .provider-card.selected {
+    border-color: #0a84ff;
+    background: rgba(10, 132, 255, 0.15);
+    box-shadow: 0 0 0 1px #0a84ff;
+  }
+
+  .provider-name {
+    color: #f5f5f7;
+  }
+
+  .key-step {
+    background: rgba(255, 255, 255, 0.055);
+  }
+
+  input[type="password"],
   select,
   kbd {
     color: #f5f5f7;

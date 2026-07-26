@@ -9,12 +9,14 @@
   const PROVIDERS = Object.freeze({
     deepseek: Object.freeze({
       apiBaseUrl: "https://api.deepseek.com",
+      apiKeyUrl: "https://platform.deepseek.com/api_keys",
       defaultModel: "deepseek-v4-flash",
       id: "deepseek",
       label: "DeepSeek"
     }),
     openai: Object.freeze({
       apiBaseUrl: "https://api.openai.com/v1",
+      apiKeyUrl: "https://platform.openai.com/api-keys",
       defaultModel: "gpt-5.6-luna",
       id: "openai",
       label: "OpenAI"

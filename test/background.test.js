@@ -625,6 +625,7 @@ test("rejects privileged messages from content scripts", async () => {
   const harness = createHarness({ fetchImpl: async () => createResponse([]) });
   const messages = [
     { type: "clearCache" },
+    { type: "configureProvider", provider: "deepseek", apiKey: "candidate-api-key-for-background" },
     { type: "getCacheStats" },
     { type: "listProviderModels", provider: "deepseek" },
     { type: "setSiteMode", site: "https://example.com", mode: "always" },
@@ -1978,6 +1979,248 @@ test("tests the selected model against the chat completions endpoint", async () 
     "https://api.openai.com/v1/chat/completions"
   ]);
   assert.equal(response.model, "gpt-5.6-luna");
+});
+
+test("configures a verified provider and selects its preferred available model", async () => {
+  const candidateKey = "candidate-deepseek-api-key-for-background";
+  const requestedUrls = [];
+  const harness = createHarness({
+    async fetchImpl(url, options = {}) {
+      requestedUrls.push(url);
+      assert.equal(options.headers.Authorization, `Bearer ${candidateKey}`);
+
+      if (url.endsWith("/models")) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              data: [
+                { id: "deepseek-v4-pro" },
+                { id: "deepseek-v4-flash" }
+              ]
+            };
+          }
+        };
+      }
+
+      const request = JSON.parse(options.body);
+      assert.equal(request.model, "deepseek-v4-flash");
+      assert.deepEqual(request.thinking, { type: "disabled" });
+      return createResponse([]);
+    },
+    storage: {
+      providerApiKeysV1: {},
+      settingsV1: {
+        provider: "openai",
+        providerModels: {
+          deepseek: "deepseek-v4-flash",
+          openai: "gpt-5.6-luna"
+        },
+        targetLanguage: "en",
+        version: 2
+      }
+    }
+  });
+
+  const response = await harness.send({
+    type: "configureProvider",
+    apiKey: candidateKey,
+    provider: "deepseek",
+    targetLanguage: "ru"
+  });
+
+  assert.deepEqual(requestedUrls, [
+    "https://api.deepseek.com/models",
+    "https://api.deepseek.com/chat/completions"
+  ]);
+  assert.equal(response.model, "deepseek-v4-flash");
+  assert.deepEqual(Array.from(response.models), ["deepseek-v4-flash", "deepseek-v4-pro"]);
+  assert.equal(harness.storageData.providerApiKeysV1.deepseek, candidateKey);
+  assert.equal(harness.storageData.settingsV1.provider, "deepseek");
+  assert.equal(harness.storageData.settingsV1.providerModels.deepseek, "deepseek-v4-flash");
+  assert.equal(harness.storageData.settingsV1.targetLanguage, "ru");
+});
+
+test("reuses a stored provider key when the onboarding field is blank", async () => {
+  const storedKey = "stored-deepseek-api-key-for-background";
+  const harness = createHarness({
+    async fetchImpl(url, options = {}) {
+      assert.equal(options.headers.Authorization, `Bearer ${storedKey}`);
+
+      if (url.endsWith("/models")) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { data: [{ id: "deepseek-v4-flash" }] };
+          }
+        };
+      }
+
+      return createResponse([]);
+    },
+    storage: {
+      providerApiKeysV1: { deepseek: storedKey }
+    }
+  });
+
+  const response = await harness.send({
+    type: "configureProvider",
+    apiKey: "   ",
+    provider: "deepseek",
+    targetLanguage: "ru"
+  });
+
+  assert.equal(response.model, "deepseek-v4-flash");
+  assert.equal(harness.storageData.providerApiKeysV1.deepseek, storedKey);
+  assert.equal(harness.storageData.settingsV1.targetLanguage, "ru");
+});
+
+test("preserves settings and other provider keys changed during provider verification", async () => {
+  const candidateKey = "candidate-deepseek-api-key-for-background";
+  const updatedOpenAiKey = "updated-openai-api-key-for-background";
+  let harness;
+  harness = createHarness({
+    async fetchImpl(url) {
+      if (url.endsWith("/models")) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { data: [{ id: "deepseek-v4-flash" }] };
+          }
+        };
+      }
+
+      harness.storageData.providerApiKeysV1.openai = updatedOpenAiKey;
+      harness.storageData.settingsV1 = {
+        ...harness.storageData.settingsV1,
+        protectedTerms: ["KeepMe"],
+        siteRules: { "https://example.com": "never" }
+      };
+      return createResponse([]);
+    },
+    storage: {
+      providerApiKeysV1: {
+        deepseek: "old-deepseek-api-key-for-background",
+        openai: "old-openai-api-key-for-background"
+      },
+      settingsV1: {
+        provider: "openai",
+        providerModels: {
+          deepseek: "deepseek-v4-flash",
+          openai: "gpt-5.6-luna"
+        },
+        targetLanguage: "en",
+        version: 2
+      }
+    }
+  });
+
+  await harness.send({
+    type: "configureProvider",
+    apiKey: candidateKey,
+    provider: "deepseek",
+    targetLanguage: "ru"
+  });
+
+  assert.equal(harness.storageData.providerApiKeysV1.deepseek, candidateKey);
+  assert.equal(harness.storageData.providerApiKeysV1.openai, updatedOpenAiKey);
+  assert.deepEqual(Array.from(harness.storageData.settingsV1.protectedTerms), ["KeepMe"]);
+  assert.deepEqual(
+    { ...harness.storageData.settingsV1.siteRules },
+    { "https://example.com": "never" }
+  );
+  assert.equal(harness.storageData.settingsV1.targetLanguage, "ru");
+});
+
+test("does not restore a saved provider key changed during verification", async () => {
+  const storedKey = "stored-deepseek-api-key-for-background";
+  let harness;
+  harness = createHarness({
+    async fetchImpl(url) {
+      if (url.endsWith("/models")) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { data: [{ id: "deepseek-v4-flash" }] };
+          }
+        };
+      }
+
+      delete harness.storageData.providerApiKeysV1.deepseek;
+      return createResponse([]);
+    },
+    storage: {
+      providerApiKeysV1: { deepseek: storedKey },
+      settingsV1: {
+        provider: "deepseek",
+        targetLanguage: "en",
+        version: 2
+      }
+    }
+  });
+
+  await assert.rejects(
+    harness.send({
+      type: "configureProvider",
+      apiKey: "",
+      provider: "deepseek",
+      targetLanguage: "ru"
+    }),
+    /configuration changed/u
+  );
+
+  assert.equal(harness.storageData.providerApiKeysV1.deepseek, undefined);
+  assert.equal(harness.storageData.settingsV1.targetLanguage, "en");
+});
+
+test("does not save a candidate provider key before connection verification succeeds", async () => {
+  const harness = createHarness({
+    async fetchImpl(url) {
+      if (url.endsWith("/models")) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { data: [{ id: "deepseek-v4-flash" }] };
+          }
+        };
+      }
+
+      return {
+        ok: false,
+        status: 401,
+        async json() {
+          return { error: { message: "Invalid API key" } };
+        }
+      };
+    },
+    storage: {
+      providerApiKeysV1: {},
+      settingsV1: {
+        provider: "openai",
+        targetLanguage: "en",
+        version: 2
+      }
+    }
+  });
+
+  await assert.rejects(
+    harness.send({
+      type: "configureProvider",
+      apiKey: "invalid-candidate-api-key-for-background",
+      provider: "deepseek",
+      targetLanguage: "ru"
+    }),
+    /Invalid API key/u
+  );
+
+  assert.equal(harness.storageData.providerApiKeysV1.deepseek, undefined);
+  assert.equal(harness.storageData.settingsV1.provider, "openai");
+  assert.equal(harness.storageData.settingsV1.targetLanguage, "en");
 });
 
 test("updates the tab badge only from the top frame", async () => {

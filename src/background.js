@@ -72,6 +72,7 @@
   const NETWORK_TIMEOUT_MS = 45000;
   const PRIVILEGED_MESSAGE_TYPES = new Set([
     "clearCache",
+    "configureProvider",
     "getCacheStats",
     "listProviderModels",
     "setSiteMode",
@@ -1319,21 +1320,8 @@
     return { cacheEntries: cacheEntryCount };
   }
 
-  async function listProviderModels(providerValue, force = false) {
-    const provider = normalizeProvider(providerValue);
+  async function fetchProviderModels(provider, apiKey) {
     const definition = PROVIDERS[provider];
-    const cached = providerModelCache.get(provider);
-
-    if (!force && cached?.expiresAt > Date.now()) {
-      return { models: cached.models, provider };
-    }
-
-    const apiKey = await getProviderKey(provider);
-
-    if (!apiKey) {
-      throw new Error(`No ${definition.label} API key is configured.`);
-    }
-
     const body = await fetchJsonWithRetry(getModelsUrl(provider), {
       headers: {
         Accept: "application/json",
@@ -1346,6 +1334,24 @@
       throw new Error(`${definition.label} did not return a compatible text model.`);
     }
 
+    return models;
+  }
+
+  async function listProviderModels(providerValue, force = false) {
+    const provider = normalizeProvider(providerValue);
+    const cached = providerModelCache.get(provider);
+
+    if (!force && cached?.expiresAt > Date.now()) {
+      return { models: cached.models, provider };
+    }
+
+    const apiKey = await getProviderKey(provider);
+
+    if (!apiKey) {
+      throw new Error(`No ${PROVIDERS[provider].label} API key is configured.`);
+    }
+
+    const models = await fetchProviderModels(provider, apiKey);
     providerModelCache.set(provider, {
       expiresAt: Date.now() + 300000,
       models
@@ -1353,18 +1359,13 @@
     return { models, provider };
   }
 
-  async function testProviderConnection(providerValue, modelValue) {
-    const provider = normalizeProvider(providerValue);
+  async function probeProviderConnection(provider, model, apiKey, models) {
     const definition = PROVIDERS[provider];
-    const { models } = await listProviderModels(provider, true);
-    const settings = await getSettings();
-    const model = String(modelValue || settings.providerModels[provider]);
 
     if (!models.includes(model)) {
       throw new Error(`The configured model ${model} is not available for this ${definition.label} key.`);
     }
 
-    const apiKey = await getProviderKey(provider);
     const request = buildProviderRequest(provider, {
       maxTokens: 32,
       messages: [{ role: "user", content: "Return JSON only: {\"ok\":true}" }],
@@ -1378,8 +1379,71 @@
       },
       body: JSON.stringify(request.body)
     }, definition.label);
+  }
+
+  async function testProviderConnection(providerValue, modelValue) {
+    const provider = normalizeProvider(providerValue);
+    const { models } = await listProviderModels(provider, true);
+    const settings = await getSettings();
+    const model = String(modelValue || settings.providerModels[provider]);
+    const apiKey = await getProviderKey(provider);
+    await probeProviderConnection(provider, model, apiKey, models);
 
     return { model, provider };
+  }
+
+  async function configureProvider(providerValue, apiKeyValue, targetLanguageValue) {
+    const provider = normalizeProvider(providerValue);
+    const initialKeys = await getProviderKeys();
+    const candidateApiKey = String(apiKeyValue || "").trim();
+    const apiKey = candidateApiKey || initialKeys[provider] || "";
+
+    if (apiKey.length < 20) {
+      throw new Error(`Enter a valid ${PROVIDERS[provider].label} API key.`);
+    }
+
+    const [settings, models] = await Promise.all([
+      getSettings(),
+      fetchProviderModels(provider, apiKey)
+    ]);
+    const configuredModel = settings.providerModels[provider];
+    const model = models.includes(configuredModel) ? configuredModel : models[0];
+    await probeProviderConnection(provider, model, apiKey, models);
+
+    const [latestKeys, latestSettings] = await Promise.all([
+      getProviderKeys(),
+      getSettings()
+    ]);
+
+    if (!candidateApiKey && latestKeys[provider] !== apiKey) {
+      throw new Error(`${PROVIDERS[provider].label} configuration changed. Try again.`);
+    }
+
+    latestKeys[provider] = apiKey;
+    const nextSettings = sanitizeSettings({
+      ...latestSettings,
+      provider,
+      providerModels: {
+        ...latestSettings.providerModels,
+        [provider]: model
+      },
+      targetLanguage: targetLanguageValue
+    });
+    await api.storage.local.set({
+      [PROVIDER_KEYS_KEY]: latestKeys,
+      [SETTINGS_KEY]: nextSettings
+    });
+
+    if (provider === "deepseek") {
+      await api.storage.local.remove(LEGACY_DEEPSEEK_KEY);
+    }
+
+    providerModelCache.set(provider, {
+      expiresAt: Date.now() + 300000,
+      models
+    });
+    await broadcastSettings();
+    return { model, models, provider };
   }
 
   function getTranslationRequestScope(sender) {
@@ -1534,6 +1598,8 @@
       }
       case "cancelTranslations":
         return cancelTranslationRequests(sender);
+      case "configureProvider":
+        return configureProvider(message.provider, message.apiKey, message.targetLanguage);
       case "getSettings":
         return trustedSender
           ? getPublicSettings(message.site, message.includeCacheEntries === true)
