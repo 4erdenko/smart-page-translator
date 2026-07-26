@@ -23,6 +23,7 @@ const referencedFiles = new Set([
 const releaseNoticeFiles = [
   "LICENSE",
   "THIRD_PARTY_NOTICES.md",
+  "vendor/LICENSE.dejavu-fonts.txt",
   "vendor/LICENSE.fontkit.txt",
   "vendor/LICENSE.pdf-lib.txt",
   "vendor/LICENSE.pdfjs.txt",
@@ -33,6 +34,8 @@ const expectedPackageFiles = new Set([
   ...releaseNoticeFiles,
   "manifest.json",
   "vendor/browser-polyfill.js",
+  "vendor/export_fonts/DejaVuSans-Bold.ttf",
+  "vendor/export_fonts/DejaVuSans.ttf",
   "vendor/fontkit.js",
   "vendor/pdf-lib.js"
 ]);
@@ -72,6 +75,54 @@ async function listMissingHtmlResources(packageFiles) {
 
       if (!packageFiles.has(resourcePath)) {
         missingResources.push(`${htmlFile} -> ${resourcePath}`);
+      }
+    }
+  }
+
+  return missingResources;
+}
+
+async function listMissingJavaScriptResources(packageFiles) {
+  const missingResources = [];
+  const runtimeFiles = getReleaseSourceFiles(target).filter((file) => (
+    file.endsWith(".js") || file.endsWith(".mjs")
+  ));
+
+  for (const sourceFile of runtimeFiles) {
+    const source = await readFile(path.join(outputDirectory, sourceFile), "utf8");
+    const dependencies = [];
+
+    for (const [, resource] of source.matchAll(
+      /\bimport\s+(?:[^"'()]*?\s+from\s*)?["']([^"']+)["']/gu
+    )) {
+      dependencies.push({
+        path: path.posix.normalize(path.posix.join(path.posix.dirname(sourceFile), resource)),
+        resource
+      });
+    }
+
+    for (const [, argumentsSource] of source.matchAll(/\bimportScripts\s*\(([\s\S]*?)\)/gu)) {
+      for (const [, resource] of argumentsSource.matchAll(/["']([^"']+)["']/gu)) {
+        dependencies.push({ path: path.posix.normalize(resource), resource });
+      }
+    }
+
+    for (const [, resource] of source.matchAll(/\bruntime\.getURL\(["']([^"']+)["']\)/gu)) {
+      dependencies.push({ path: path.posix.normalize(resource), resource });
+    }
+
+    for (const dependency of dependencies) {
+      if (!dependency.resource
+        || /^(?:[a-z][a-z0-9+.-]*:|\/\/)/iu.test(dependency.resource)) {
+        continue;
+      }
+
+      const exists = dependency.resource.endsWith("/")
+        ? [...packageFiles].some((file) => file.startsWith(dependency.path))
+        : packageFiles.has(dependency.path);
+
+      if (!exists) {
+        missingResources.push(`${sourceFile} -> ${dependency.path}`);
       }
     }
   }
@@ -152,12 +203,17 @@ const packageFiles = new Set(await listPackageFiles(outputDirectory));
 const missingPackageFiles = [...expectedPackageFiles].filter((file) => !packageFiles.has(file));
 const unexpectedPackageFiles = [...packageFiles].filter((file) => !expectedPackageFiles.has(file));
 const missingHtmlResources = await listMissingHtmlResources(packageFiles);
+const missingJavaScriptResources = await listMissingJavaScriptResources(packageFiles);
 
-if (missingPackageFiles.length || unexpectedPackageFiles.length || missingHtmlResources.length) {
+if (missingPackageFiles.length
+  || unexpectedPackageFiles.length
+  || missingHtmlResources.length
+  || missingJavaScriptResources.length) {
   throw new Error(
     `Package allowlist mismatch. Missing: ${missingPackageFiles.join(", ") || "none"}. `
     + `Unexpected: ${unexpectedPackageFiles.join(", ") || "none"}. `
-    + `Missing HTML resources: ${missingHtmlResources.join(", ") || "none"}.`
+    + `Missing HTML resources: ${missingHtmlResources.join(", ") || "none"}. `
+    + `Missing JavaScript resources: ${missingJavaScriptResources.join(", ") || "none"}.`
   );
 }
 

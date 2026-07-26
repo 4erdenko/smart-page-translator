@@ -17,8 +17,8 @@
       </div>
       <div class="top-actions">
         <button id="settingsButton" class="quiet" type="button" data-i18n="settings">Settings</button>
-        <label class="file-button" for="fileInput" data-i18n="choosePdf">Choose PDF</label>
-        <input id="fileInput" type="file" accept="application/pdf,.pdf">
+        <button id="chooseFileButton" class="file-button" type="button" aria-controls="fileInput" data-i18n="choosePdf">Choose PDF</button>
+        <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
       </div>
     </header>
 
@@ -26,11 +26,11 @@
       <section class="intro" id="intro">
         <p class="eyebrow" data-i18n="localDocument">Local document</p>
         <h1 data-i18n="translatePdf">Translate a PDF without uploading the file</h1>
-        <p data-i18n="pdfIntroDescription">The document is parsed locally. Only extracted text is sent to your selected translation provider after you click Translate.</p>
-        <label class="drop-zone" id="dropZone" for="fileInput">
+        <p id="introDescription" data-i18n="pdfIntroDescription">The document is parsed locally. Only extracted text is sent to your selected translation provider after you click Translate.</p>
+        <button class="drop-zone" id="dropZone" type="button" aria-controls="fileInput" aria-describedby="introDescription">
           <strong data-i18n="dropPdf">Drop a PDF here</strong>
           <span data-i18n="orChooseFile">or choose a file from this computer</span>
-        </label>
+        </button>
         <p class="intro-status" id="introStatus" role="status"></p>
       </section>
 
@@ -97,7 +97,11 @@
           <figure class="page-translation">
             <figcaption data-i18n="selectionTranslation">Translation</figcaption>
             <div class="page-canvas">
-              <canvas></canvas>
+              <canvas aria-hidden="true"></canvas>
+              <div class="translation-empty">
+                <strong data-i18n="pdfTranslationPendingTitle">Translation not started</strong>
+                <span data-i18n="pdfTranslationPendingDetails">Choose a language and translate the document to fill this pane.</span>
+              </div>
             </div>
           </figure>
         </div>

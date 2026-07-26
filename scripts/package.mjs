@@ -120,9 +120,104 @@ async function listTrackedSourceFiles() {
   return trackedFiles.split("\0").filter(shouldIncludeSourceFile);
 }
 
-export async function packageTarget(target) {
+async function assertCleanTrackedFiles() {
+  const { stdout } = await execFileAsync(
+    "git",
+    ["status", "--porcelain=v1", "--untracked-files=no"],
+    {
+      cwd: projectRoot,
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024
+    }
+  );
+
+  if (stdout.trim()) {
+    throw new Error("Release packaging requires no staged or unstaged changes to tracked files.");
+  }
+}
+
+export function validateStoreReleaseIdentity({ head, tag, tagCommit, tagType, version }) {
+  const expectedTag = `v${version}`;
+
+  if (tag !== expectedTag) {
+    throw new Error(`Store packaging requires the exact release tag ${expectedTag}.`);
+  }
+
+  if (tagType !== "tag") {
+    throw new Error(`Store packaging requires ${expectedTag} to be an annotated tag.`);
+  }
+
+  if (!head || head !== tagCommit) {
+    throw new Error(`Store packaging requires ${expectedTag} to point at HEAD.`);
+  }
+}
+
+async function assertStoreReleaseIdentity() {
+  const packageManifest = JSON.parse(await readFile(path.join(projectRoot, "package.json"), "utf8"));
+  const expectedTag = `v${packageManifest.version}`;
+  const gitOptions = {
+    cwd: projectRoot,
+    encoding: "utf8"
+  };
+  const [{ stdout: head }, { stdout: tagCommit }, { stdout: tagType }] = await Promise.all([
+    execFileAsync("git", ["rev-parse", "HEAD^{commit}"], gitOptions),
+    execFileAsync("git", ["rev-parse", `${expectedTag}^{commit}`], gitOptions)
+      .catch(() => ({ stdout: "" })),
+    execFileAsync("git", ["cat-file", "-t", `refs/tags/${expectedTag}`], gitOptions)
+      .catch(() => ({ stdout: "" }))
+  ]);
+
+  validateStoreReleaseIdentity({
+    head: head.trim(),
+    tag: tagCommit.trim() ? expectedTag : "",
+    tagCommit: tagCommit.trim(),
+    tagType: tagType.trim(),
+    version: packageManifest.version
+  });
+}
+
+async function listDirectoryFiles(directory, relativeDirectory = "") {
+  const files = [];
+  const entries = await readdir(directory, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const absolutePath = path.join(directory, entry.name);
+    const relativePath = path.posix.join(relativeDirectory, entry.name);
+
+    if (entry.isDirectory()) {
+      files.push(...await listDirectoryFiles(absolutePath, relativePath));
+    } else if (entry.isFile()) {
+      files.push(relativePath);
+    } else {
+      throw new Error(`Package source contains an unsupported entry: ${relativePath}`);
+    }
+  }
+
+  return files.sort(compareArchivePaths);
+}
+
+async function verifyArchiveFiles(content, expectedFiles, label) {
+  const archive = await JSZip.loadAsync(content);
+  const archiveFiles = Object.values(archive.files)
+    .filter((entry) => !entry.dir)
+    .map(({ name }) => name)
+    .sort(compareArchivePaths);
+  const expected = [...expectedFiles].sort(compareArchivePaths);
+
+  if (JSON.stringify(archiveFiles) !== JSON.stringify(expected)) {
+    throw new Error(`${label} archive file list does not match its reviewed source.`);
+  }
+
+  return archive;
+}
+
+export async function packageTarget(target, { verifyRepository = true } = {}) {
   if (!["chrome", "firefox", "source"].includes(target)) {
     throw new Error("Package target must be firefox, chrome, or source.");
+  }
+
+  if (verifyRepository) {
+    await assertCleanTrackedFiles();
   }
 
   const artifactDirectory = path.join(projectRoot, "artifacts");
@@ -133,14 +228,62 @@ export async function packageTarget(target) {
   await mkdir(artifactDirectory, { recursive: true });
   await writeFile(outputPath, content);
   console.log(`Packaged ${target} archive in ${outputPath}`);
-  return { content, outputPath };
+  return { content, outputPath, target };
 }
 
-async function packageStores() {
+export async function readVerifiedArchive(outputPath, expectedContent) {
+  const content = await readFile(outputPath);
+
+  if (Buffer.compare(content, expectedContent) !== 0) {
+    throw new Error(`Written archive does not match generated content: ${path.basename(outputPath)}`);
+  }
+
+  return content;
+}
+
+async function verifyStorePackages(packages, checksumPath) {
+  const packageManifest = JSON.parse(await readFile(path.join(projectRoot, "package.json"), "utf8"));
+  const writtenPackages = [];
+
+  for (const { content: generatedContent, outputPath, target } of packages) {
+    const content = await readVerifiedArchive(outputPath, generatedContent);
+    const expectedFiles = target === "source"
+      ? await listTrackedSourceFiles()
+      : await listDirectoryFiles(path.join(projectRoot, "dist", target));
+    const archive = await verifyArchiveFiles(content, expectedFiles, target);
+
+    if (target !== "source") {
+      const manifest = JSON.parse(await archive.file("manifest.json").async("string"));
+
+      if (manifest.version !== packageManifest.version) {
+        throw new Error(`${target} archive manifest version does not match package.json.`);
+      }
+    }
+
+    writtenPackages.push({ content, outputPath });
+  }
+
+  const checksumLines = (await readFile(checksumPath, "utf8")).trim().split("\n");
+  const expectedChecksums = writtenPackages.map(({ content, outputPath }) => (
+    `${createHash("sha256").update(content).digest("hex")}  ${path.basename(outputPath)}`
+  ));
+
+  if (JSON.stringify(checksumLines) !== JSON.stringify(expectedChecksums)) {
+    throw new Error("Store package checksums do not match the generated archives.");
+  }
+}
+
+async function packageStores({ smoke = false } = {}) {
+  await assertCleanTrackedFiles();
+
+  if (!smoke) {
+    await assertStoreReleaseIdentity();
+  }
+
   const packages = [];
 
   for (const target of ["firefox", "chrome", "source"]) {
-    packages.push(await packageTarget(target));
+    packages.push(await packageTarget(target, { verifyRepository: false }));
   }
 
   const checksums = packages
@@ -151,7 +294,9 @@ async function packageStores() {
     .join("\n");
   const checksumPath = path.join(projectRoot, "artifacts", "SHA256SUMS");
   await writeFile(checksumPath, `${checksums}\n`);
+  await verifyStorePackages(packages, checksumPath);
   console.log(`Recorded package checksums in ${checksumPath}`);
+  console.log("Verified store archive hashes, manifests, and file lists.");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
@@ -159,7 +304,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
   const target = targetIndex >= 0 ? process.argv[targetIndex + 1] : "firefox";
 
   if (target === "stores") {
-    await packageStores();
+    await packageStores({ smoke: process.argv.includes("--smoke") });
   } else {
     await packageTarget(target);
   }

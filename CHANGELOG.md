@@ -2,6 +2,14 @@
 
 All notable changes will be documented in this file.
 
+## 0.2.1 - 2026-07-27
+
+- Added explicit provider-data consent before saving or verifying an API key.
+- Improved translation of preformatted content and bounded oversized DOM queues.
+- Reduced cache write amplification while preserving crash recovery and hard storage limits.
+- Improved translated PDF font coverage, export status, and searchable text output.
+- Added deterministic dependency, release-identity, package, and source-archive validation.
+
 ## 0.2.0 - 2026-07-26
 
 - Added focused first-run setup with provider key links, connection verification, and automatic compatible-model selection.

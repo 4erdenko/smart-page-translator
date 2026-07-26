@@ -19,6 +19,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
     createTranslationBatches,
     getBoundedPdfRenderScale,
     getPdfTextMaskRectangle,
+    getTranslatedPagePreviewMode,
     isSupportedPdfTextTransform,
     selectPdfBackgroundChannels
   } = globalThis.SmartTranslationDocumentCore;
@@ -35,6 +36,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
   const elements = {
     cacheTranslations: document.querySelector("#cacheTranslations"),
     cancelButton: document.querySelector("#cancelButton"),
+    chooseFileButton: document.querySelector("#chooseFileButton"),
     documentName: document.querySelector("#documentName"),
     documentSummary: document.querySelector("#documentSummary"),
     downloadButton: document.querySelector("#downloadButton"),
@@ -58,6 +60,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
   let activeRun;
   let busy = false;
   let documentState;
+  let exportError = "";
   let hasApiKey = false;
   let pendingLoad;
   const pageViews = new Map();
@@ -81,8 +84,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
   }
 
   function isDocumentTranslated() {
-    const blocks = documentState?.pages.flatMap((page) => page.blocks) || [];
-    return blocks.length > 0 && blocks.every(({ translation }) => translation);
+    return documentState?.translationComplete === true;
   }
 
   function setBusy(nextBusy) {
@@ -91,6 +93,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
     const translated = isDocumentTranslated();
     elements.cacheTranslations.disabled = busy;
     elements.cancelButton.hidden = !busy || !activeRun;
+    elements.chooseFileButton.disabled = busy;
     elements.downloadButton.disabled = busy || !translated;
     elements.downloadButton.hidden = !translated;
     elements.fileInput.disabled = busy;
@@ -98,7 +101,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
     elements.targetLanguage.disabled = busy;
     elements.translationBadge.hidden = !translated;
     elements.translateButton.disabled = busy || !documentState || !hasApiKey;
-    elements.dropZone.setAttribute("aria-disabled", String(busy));
+    elements.dropZone.disabled = busy;
     document.body.setAttribute("aria-busy", String(busy));
 
     if (wasBusy && !busy && settingsRefreshPending) {
@@ -168,6 +171,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
   function clearDocument() {
     const previousState = documentState;
     documentState = undefined;
+    exportError = "";
     void disposePendingLoad();
     clearPageViews();
     elements.workspace.hidden = true;
@@ -269,8 +273,12 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
   }
 
   function translatedPageCount() {
+    const documentTranslated = isDocumentTranslated();
+
     return documentState.pages.filter((page) => (
-      page.blocks.length > 0 && page.blocks.every(({ translation }) => translation)
+      page.blocks.length > 0
+        ? page.blocks.every(({ translation }) => translation)
+        : documentTranslated
     )).length;
   }
 
@@ -292,13 +300,16 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
       return;
     }
 
+    exportError = "";
+    documentState.translationComplete = false;
+
     for (const page of documentState.pages) {
       for (const block of page.blocks) {
         block.translation = "";
         delete block.translationSegments;
       }
 
-      refreshTranslatedPreview(page);
+      refreshTranslatedPreview(page, false);
     }
 
     updateDocumentSummary();
@@ -516,7 +527,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
     return backgrounds;
   }
 
-  function refreshTranslatedPreview(page) {
+  function refreshTranslatedPreview(page, documentTranslated = false) {
     const view = pageViews.get(page.number);
 
     if (!view?.rendered) {
@@ -525,6 +536,20 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
 
     const context = view.translatedCanvas.getContext("2d", { alpha: false });
     const sourceContext = view.originalCanvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    const previewMode = getTranslatedPagePreviewMode(page.blocks, documentTranslated);
+    view.translationEmpty.hidden = previewMode !== "pending";
+
+    if (previewMode === "original") {
+      context.drawImage(view.originalCanvas, 0, 0);
+      return;
+    }
+
+    if (previewMode === "pending") {
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, context.canvas.width, context.canvas.height);
+      return;
+    }
+
     context.drawImage(view.originalCanvas, 0, 0);
     drawTranslationOverlay(page, context, sourceContext, view.scale);
   }
@@ -566,7 +591,10 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
       view.rendered = true;
       view.originalCanvas.dataset.rendered = "true";
       view.translatedCanvas.dataset.rendered = "true";
-      refreshTranslatedPreview(page);
+      refreshTranslatedPreview(
+        page,
+        page.blocks.length === 0 && state.translationComplete
+      );
     } finally {
       pdfPage.cleanup();
     }
@@ -635,9 +663,25 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
 
     for (const page of documentState.pages) {
       const fragment = elements.pageTemplate.content.cloneNode(true);
+      localizeDocument(fragment);
       const article = fragment.querySelector(".page-sheet");
       const originalCanvas = fragment.querySelector(".page-original canvas");
       const translatedCanvas = fragment.querySelector(".page-translation canvas");
+      const translationEmpty = fragment.querySelector(".translation-empty");
+
+      if (page.blocks.length === 0) {
+        translationEmpty.querySelector("strong").textContent = t(
+          "pdfPageNoTextTitle",
+          null,
+          "No translatable text on this page"
+        );
+        translationEmpty.querySelector("span").textContent = t(
+          "pdfPageNoTextDetails",
+          null,
+          "The original page will be preserved in the translated download."
+        );
+      }
+
       article.dataset.pageNumber = String(page.number);
       article.style.setProperty("--page-ratio", `${page.width} / ${page.height}`);
       fragment.querySelector(".page-number").textContent = t(
@@ -651,6 +695,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
         queued: false,
         rendered: false,
         scale: PREVIEW_SCALE,
+        translationEmpty,
         translatedCanvas,
         wanted: false
       };
@@ -669,6 +714,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
     }
 
     setBusy(true);
+    exportError = "";
     const previousState = documentState;
     documentState = undefined;
     await disposePendingLoad();
@@ -769,7 +815,8 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
         name: file.name,
         pages,
         pdfDocument,
-        sourceUrl
+        sourceUrl,
+        translationComplete: false
       };
     } catch (error) {
       const isCurrentLoad = pendingLoad === load;
@@ -822,7 +869,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
     }
 
     for (const page of changedPages) {
-      refreshTranslatedPreview(page);
+      refreshTranslatedPreview(page, false);
     }
   }
 
@@ -898,7 +945,19 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
     } else if (run.error) {
       showProgress(String(run.error?.message || run.error));
     } else if (!run.cancelled) {
-      showProgress(t("pdfTranslated", null, "PDF translation complete."), batches.length, batches.length);
+      documentState.translationComplete = true;
+      const documentTranslated = isDocumentTranslated();
+      updateDocumentSummary();
+
+      for (const page of documentState.pages) {
+        refreshTranslatedPreview(page, documentTranslated);
+      }
+
+      showProgress(
+        t("pdfTranslated", null, "Translated PDF is ready to review or download."),
+        batches.length,
+        batches.length
+      );
     }
 
     if (activeRun === run) {
@@ -1071,8 +1130,8 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
 
     outputDocument.registerFontkit(fontkit);
     const [regularBytes, boldBytes] = await Promise.all([
-      fetchExtensionAsset("vendor/standard_fonts/LiberationSans-Regular.ttf"),
-      fetchExtensionAsset("vendor/standard_fonts/LiberationSans-Bold.ttf")
+      fetchExtensionAsset("vendor/export_fonts/DejaVuSans.ttf"),
+      fetchExtensionAsset("vendor/export_fonts/DejaVuSans-Bold.ttf")
     ]);
     const [regular, bold] = await Promise.all([
       outputDocument.embedFont(regularBytes, { subset: true }),
@@ -1082,11 +1141,45 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
     return { bold, regular };
   }
 
+  function findUnsupportedPdfExportCharacter(text, supportedCodePoints) {
+    for (const character of Array.from(String(text || ""))) {
+      if (!/\s/u.test(character) && !supportedCodePoints.has(character.codePointAt(0))) {
+        return character;
+      }
+    }
+
+    return "";
+  }
+
+  function assertPdfExportGlyphCoverage(pages, exportFonts) {
+    const coverage = {
+      bold: new Set(exportFonts.bold.getCharacterSet()),
+      regular: new Set(exportFonts.regular.getCharacterSet())
+    };
+
+    for (const page of pages) {
+      for (const block of page.blocks) {
+        const supportedCodePoints = block.fontWeight >= 600 ? coverage.bold : coverage.regular;
+
+        if (findUnsupportedPdfExportCharacter(block.translation, supportedCodePoints)) {
+          throw new Error(
+            t(
+              "pdfUnsupportedExportCharacters",
+              null,
+              "This translation contains characters the bundled PDF font cannot render. Export was stopped to avoid missing text."
+            )
+          );
+        }
+      }
+    }
+  }
+
   async function downloadTranslatedPdf() {
     if (!isDocumentTranslated()) {
       return;
     }
 
+    exportError = "";
     setBusy(true);
     showProgress(
       t("exportingPdf", { current: 0, total: documentState.pages.length }, `Building PDF 0 of ${documentState.pages.length}…`),
@@ -1097,6 +1190,7 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
     try {
       const outputDocument = await PDFDocument.create();
       const exportFonts = await loadPdfExportFonts(outputDocument);
+      assertPdfExportGlyphCoverage(documentState.pages, exportFonts);
       let embeddedImageBytes = 0;
 
       for (const page of documentState.pages) {
@@ -1178,7 +1272,8 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
       setTimeout(() => URL.revokeObjectURL(downloadUrl), 30_000);
       showProgress(t("pdfDownloadReady", null, "Translated PDF download started."));
     } catch (error) {
-      showProgress(String(error?.message || error));
+      exportError = String(error?.message || error);
+      showProgress(exportError);
     } finally {
       setBusy(false);
     }
@@ -1203,7 +1298,11 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
     hasApiKey = response.hasApiKey;
     providerLabel = response.providers?.[response.settings.provider]?.label || response.settings.provider;
 
-    if (!hasApiKey) {
+    if (exportError) {
+      showProgress(exportError);
+    } else if (isDocumentTranslated()) {
+      showProgress(t("pdfTranslated", null, "Translated PDF is ready to review or download."));
+    } else if (!hasApiKey) {
       showProgress(
         t(
           "apiKeyRequiredDetails",
@@ -1240,6 +1339,8 @@ import * as pdfjsLib from "../vendor/pdf.mjs";
 
     elements.fileInput.value = "";
   });
+  elements.chooseFileButton.addEventListener("click", () => elements.fileInput.click());
+  elements.dropZone.addEventListener("click", () => elements.fileInput.click());
   elements.dropZone.addEventListener("dragenter", (event) => {
     event.preventDefault();
     elements.dropZone.dataset.active = "true";

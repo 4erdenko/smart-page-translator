@@ -1,9 +1,9 @@
-fontkit 2.0.4
+dfa 1.2.0
 
 The upstream npm package declares the MIT license but does not ship a
 standalone license file.
 
-Copyright (c) Devon Govett, Andrew Dillon, and contributors
+Copyright (c) Devon Govett and contributors
 
 MIT License
 

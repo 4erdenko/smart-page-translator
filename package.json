@@ -1,6 +1,6 @@
 {
   "name": "smart-page-translator-extension",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "A cross-browser, cached AI page and PDF translator for Firefox and Chromium browsers.",
   "license": "MPL-2.0",
@@ -16,14 +16,17 @@
     "build": "npm run build:firefox && npm run build:chrome",
     "build:chrome": "node scripts/build.mjs --target chrome",
     "build:firefox": "node scripts/build.mjs --target firefox",
-    "check": "npm run lint && npm test && npm run build && npm run check:manifests && npm run check:store-assets && npm run lint:firefox",
+    "check": "npm run lint && npm test && npm run check:dependencies && npm run check:release && npm run build && npm run check:manifests && npm run check:store-assets && npm run lint:firefox",
+    "check:dependencies": "node scripts/check-dependencies.mjs",
     "check:manifests": "node scripts/check-manifest.mjs --target firefox && node scripts/check-manifest.mjs --target chrome",
+    "check:release": "node scripts/check-release.mjs",
     "check:store-assets": "node scripts/check-store-assets.mjs",
     "lint": "eslint .",
     "lint:firefox": "node scripts/lint-firefox.mjs",
     "package:chrome": "npm run check && node scripts/package.mjs --target chrome",
     "package:firefox": "npm run check && node scripts/package.mjs --target firefox",
     "package:stores": "npm run check && node scripts/package.mjs --target stores",
+    "package:stores:smoke": "node scripts/package.mjs --target stores --smoke",
     "package:source": "npm run check && node scripts/package.mjs --target source",
     "test": "node --test"
   },
@@ -31,7 +34,8 @@
     "node": ">=22.13.0"
   },
   "dependencies": {
-    "@pdf-lib/fontkit": "1.1.1",
+    "dejavu-fonts-ttf": "2.37.3",
+    "fontkit": "2.0.4",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "6.1.200",
     "webextension-polyfill": "0.12.0"
@@ -43,6 +47,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "addons-linter": "10.9.0",
+    "esbuild": "0.28.1",
     "eslint": "10.8.0",
     "globals": "17.7.0",
     "jszip": "3.10.1"

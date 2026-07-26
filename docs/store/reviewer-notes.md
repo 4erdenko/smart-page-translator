@@ -2,9 +2,9 @@
 
 ## Version and build
 
-Version: 0.2.0
+Version: 0.2.1
 
-Source revision: tag `v0.2.0`
+Source revision: tag `v0.2.1`
 
 Build on Ubuntu 24.04 ARM64 or macOS with Node.js 24 and npm 11:
 
@@ -36,7 +36,7 @@ Automatic translation excludes form values and editable text. Cross-origin frame
 
 PDF bytes, filenames, images, layout coordinates, and annotations stay local. Only grouped extracted text and short neighboring-text context are transmitted after Translate document is pressed. PDF export is created locally and flattens the page; links, annotations, interactive forms, and digital signatures are not retained.
 
-PDF.js and PDF-LIB are pinned upstream release assets. Fontkit is pinned with two deterministic CSP substitutions documented in `THIRD_PARTY_NOTICES.md`. Mozilla's linter reports four allowlisted upstream PDF.js warnings in two files; project runtime source is separately tested to reject dynamic imports.
+PDF.js and PDF-LIB are pinned upstream release assets. The official fontkit browser module is bundled with esbuild and a small first-party PDF-LIB compatibility adapter; third-party code is neither patched nor post-processed. The locked runtime dependency graph is verified during the build, generated dynamic code is rejected, and DejaVu Sans Regular and Bold are copied from a locked package with their license for searchable PDF export. Mozilla's linter reports four allowlisted upstream PDF.js warnings in two files; project runtime source is separately tested to reject dynamic imports.
 
 ## Network and privacy
 

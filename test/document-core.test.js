@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { readFile } = require("node:fs/promises");
 const path = require("node:path");
-const fontkit = require("@pdf-lib/fontkit");
+const vm = require("node:vm");
 const { PDFDocument } = require("pdf-lib");
 const {
   applyDocumentTranslationSegment,
@@ -12,6 +12,7 @@ const {
   extractPdfText,
   getBoundedPdfRenderScale,
   getPdfTextMaskRectangle,
+  getTranslatedPagePreviewMode,
   isHorizontalPdfTextTransform,
   isSupportedPdfTextTransform,
   selectPdfBackgroundChannels,
@@ -91,6 +92,79 @@ test("batches document segments by count and request characters", () => {
   assert.deepEqual(
     createTranslationBatches(items, 2, 10).map((batch) => batch.map(({ id }) => id)),
     [["a", "b"], ["c"]]
+  );
+});
+
+test("preserves zero-text PDF pages after the document translation completes", () => {
+  assert.equal(getTranslatedPagePreviewMode([], false), "pending");
+  assert.equal(getTranslatedPagePreviewMode([], true), "original");
+  assert.equal(
+    getTranslatedPagePreviewMode([{ translation: "Translated" }], false),
+    "translated"
+  );
+});
+
+test("PDF page refresh uses a precomputed document translation state", async () => {
+  const source = await readFile(require.resolve("../src/pdf/pdf.js"), "utf8");
+  const stateStart = source.indexOf("function isDocumentTranslated(");
+  const stateEnd = source.indexOf("\n  function setBusy(", stateStart);
+  const stateSource = source.slice(stateStart, stateEnd);
+  const refreshStart = source.indexOf("function refreshTranslatedPreview(");
+  const refreshEnd = source.indexOf("\n  async function renderPagePreview(", refreshStart);
+  const refreshSource = source.slice(refreshStart, refreshEnd);
+
+  assert.match(stateSource, /documentState\?\.translationComplete === true/u);
+  assert.doesNotMatch(stateSource, /flatMap|every/u);
+  assert.match(
+    refreshSource,
+    /function refreshTranslatedPreview\(page, documentTranslated = false\)/u
+  );
+  assert.doesNotMatch(refreshSource, /isDocumentTranslated\(/u);
+  assert.match(
+    source,
+    /documentState\.translationComplete = true;\s+const documentTranslated = isDocumentTranslated\(\);\s+updateDocumentSummary\(\);\s+for \(const page of documentState\.pages\) \{\s+refreshTranslatedPreview\(page, documentTranslated\);/u
+  );
+});
+
+test("PDF export rejects characters missing from the bundled font before rendering", async () => {
+  const source = await readFile(require.resolve("../src/pdf/pdf.js"), "utf8");
+  const helperStart = source.indexOf("function findUnsupportedPdfExportCharacter(");
+  const helperEnd = source.indexOf("\n  function assertPdfExportGlyphCoverage(", helperStart);
+  const helper = vm.runInNewContext(`(${source.slice(helperStart, helperEnd).trim()})`);
+  const supportedText = "Text Перевод";
+  const supportedCodePoints = new Set(Array.from(supportedText, (character) => character.codePointAt(0)));
+  const downloadStart = source.indexOf("async function downloadTranslatedPdf(");
+  const downloadEnd = source.indexOf("\n  async function loadSettings(", downloadStart);
+  const downloadSource = source.slice(downloadStart, downloadEnd);
+
+  assert.equal(helper(`${supportedText}\n`, supportedCodePoints), "");
+  assert.equal(helper(`${supportedText} 中`, supportedCodePoints), "中");
+  assert.equal(helper(`${supportedText} 😀`, supportedCodePoints), "😀");
+  assert.match(
+    downloadSource,
+    /const exportFonts = await loadPdfExportFonts\(outputDocument\);\s+assertPdfExportGlyphCoverage\(documentState\.pages, exportFonts\);\s+let embeddedImageBytes = 0;/u
+  );
+});
+
+test("PDF settings refresh preserves export errors and completed status", async () => {
+  const source = await readFile(require.resolve("../src/pdf/pdf.js"), "utf8");
+  const loadStart = source.indexOf("async function loadSettings(");
+  const loadEnd = source.indexOf("\n  function handleFile(", loadStart);
+  const loadSource = source.slice(loadStart, loadEnd);
+  const exportErrorStatus = loadSource.indexOf("if (exportError)");
+  const translatedStatus = loadSource.indexOf('else if (isDocumentTranslated())');
+  const missingKeyStatus = loadSource.indexOf("else if (!hasApiKey)");
+
+  assert.ok(exportErrorStatus >= 0);
+  assert.ok(translatedStatus > exportErrorStatus);
+  assert.ok(missingKeyStatus > translatedStatus);
+  assert.match(
+    source,
+    /catch \(error\) \{\s+exportError = String\(error\?\.message \|\| error\);\s+showProgress\(exportError\);/u
+  );
+  assert.match(
+    loadSource,
+    /showProgress\(t\("pdfTranslated", null, "Translated PDF is ready to review or download\."\)\);/u
   );
 });
 
@@ -213,18 +287,18 @@ test("bounds PDF rendering by both pixels and canvas dimensions", () => {
 });
 
 test("embeds searchable Unicode translations in exported PDFs", async () => {
+  const fontkit = await import("../scripts/fontkit-adapter.mjs");
   const document = await PDFDocument.create();
   document.registerFontkit(fontkit);
-  const pdfjsDirectory = path.dirname(require.resolve("pdfjs-dist/package.json"));
   const fontBytes = await readFile(path.join(
-    pdfjsDirectory,
-    "standard_fonts",
-    "LiberationSans-Regular.ttf"
+    path.dirname(require.resolve("dejavu-fonts-ttf/package.json")),
+    "ttf",
+    "DejaVuSans.ttf"
   ));
   const font = await document.embedFont(fontBytes, { subset: true });
 
   const page = document.addPage([300, 500]);
-  page.drawText("Переведённый текст", {
+  page.drawText("Переведённый текст · 1 000 ₽ · ☑", {
     font,
     size: 14,
     x: 40,
@@ -243,7 +317,7 @@ test("embeds searchable Unicode translations in exported PDFs", async () => {
     const item = content.items.find(({ str }) => str);
     const viewport = parsedPage.getViewport({ scale: 1 });
     const transform = pdfjs.Util.transform(viewport.transform, item.transform);
-    assert.equal(item.str, "Переведённый текст");
+    assert.equal(item.str, "Переведённый текст · 1 000 ₽ · ☑");
     assert.ok(Math.abs(Math.sin(Math.atan2(transform[1], transform[0]))) < 0.01);
     assert.ok(Math.abs(transform[4] - 40) < 0.01);
     assert.ok(Math.abs(transform[5] - 70) < 0.01);

@@ -21,7 +21,7 @@ Translate user-requested website and PDF text into a chosen language, while pres
 - External connections: only the two declared provider APIs.
 - Translation proxy operated by the maintainer: No.
 - Obfuscation: No.
-- Bundled generated code: pinned PDF.js, PDF-LIB, fontkit, and webextension-polyfill assets documented in `THIRD_PARTY_NOTICES.md`.
+- Bundled generated code and fonts: pinned PDF.js, PDF-LIB, fontkit, DejaVu Sans, and webextension-polyfill assets documented in `THIRD_PARTY_NOTICES.md`.
 
 ## Data-use answers
 

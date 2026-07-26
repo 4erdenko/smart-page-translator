@@ -33,13 +33,13 @@ Privacy is part of the design. API keys and cached translations stay in extensio
 
 The source code, data flow, build instructions, and third-party notices are public.
 
-## Version 0.2.0 notes
+## Version 0.2.1 notes
 
-First public release with whole-page and PDF translation, original/translated/bilingual views, DeepSeek and OpenAI setup, per-site rules, protected terms, and the bounded local cache.
+Improves provider-consent setup, preformatted page translation, cache persistence and recovery, translated PDF font coverage and status, and deterministic release validation.
 
 ## Public links
 
 - Homepage and support: `https://github.com/4erdenko/smart-page-translator`
 - Issues: `https://github.com/4erdenko/smart-page-translator/issues`
 - Privacy policy: `https://github.com/4erdenko/smart-page-translator/blob/main/PRIVACY.md`
-- Source for version 0.2.0: `https://github.com/4erdenko/smart-page-translator/tree/v0.2.0`
+- Source for version 0.2.1: `https://github.com/4erdenko/smart-page-translator/tree/v0.2.1`

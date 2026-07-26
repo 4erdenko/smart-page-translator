@@ -23,7 +23,7 @@
 - Run `npm run package:source` and upload the resulting source ZIP when Mozilla requests source.
 - Tell reviewers to run `npm ci` followed by `npm run build:firefox` with Node.js 24 and npm 11.
 - Include the exact upstream release and source links from `THIRD_PARTY_NOTICES.md` in reviewer notes.
-- Explain that bundled PDF.js parses and renders files locally, while only grouped text and short neighboring-text context are sent after an explicit action. PDF-LIB and @pdf-lib/fontkit create the translated download locally from flattened page backgrounds and one subsetted searchable translation layer. Disclose that links, annotations, interactive forms, and digital signatures are not retained. Note that PDF.js and PDF-LIB are pinned upstream assets. Fontkit is also pinned, with two deterministic build-time substitutions that remove legacy dynamic-code paths forbidden by the extension CSP; the build fails if those reviewed upstream patterns change. PDF.js narrowly requires four upstream lint warnings in its two files (`Function` construction and variable dynamic import), while project runtime source is separately tested to reject dynamic imports.
+- Explain that bundled PDF.js parses and renders files locally, while only grouped text and short neighboring-text context are sent after an explicit action. PDF-LIB and fontkit create the translated download locally from flattened page backgrounds and one subsetted searchable DejaVu Sans translation layer. Disclose that links, annotations, interactive forms, and digital signatures are not retained. Note that PDF.js and PDF-LIB are pinned upstream assets. The official CSP-safe fontkit browser module is bundled with a first-party PDF-LIB compatibility adapter; no third-party minified code is patched. The build pins and verifies the runtime dependency graph and rejects generated dynamic code. PDF.js narrowly requires four upstream lint warnings in its two files (`Function` construction and variable dynamic import), while project runtime source is separately tested to reject dynamic imports.
 
 ## Chrome
 
@@ -52,7 +52,7 @@
 
 ## Release artifacts
 
-- Run `npm run package:stores` once from the reviewed tree to create both browser packages, the Mozilla source package, and `artifacts/SHA256SUMS`.
+- Create an annotated `v<package version>` tag on the reviewed commit, check it out with no staged or unstaged tracked changes, and run `npm run package:stores` once to create both browser packages, the Mozilla source package, and `artifacts/SHA256SUMS`. The command rejects a missing/mismatched tag or dirty tracked tree.
 - The same Chromium ZIP is used for Chrome, Edge, and Opera; do not fork store-specific runtime code without a verified compatibility need.
 - Sign through the relevant browser store; do not distribute an unsigned ZIP as a permanent Firefox installation.
 - Record SHA-256 checksums for uploaded archives.

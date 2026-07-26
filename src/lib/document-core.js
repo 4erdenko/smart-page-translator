@@ -528,6 +528,16 @@
     return true;
   }
 
+  function getTranslatedPagePreviewMode(blocks, documentTranslated) {
+    const pageBlocks = Array.isArray(blocks) ? blocks : [];
+
+    if (pageBlocks.some(({ translation }) => Boolean(translation))) {
+      return "translated";
+    }
+
+    return pageBlocks.length === 0 && documentTranslated ? "original" : "pending";
+  }
+
   function createTranslationBatches(items, maximumItems = 24, maximumCharacters = 9000) {
     const batches = [];
     let batch = [];
@@ -563,6 +573,7 @@
     extractPdfText,
     getBoundedPdfRenderScale,
     getPdfTextMaskRectangle,
+    getTranslatedPagePreviewMode,
     isHorizontalPdfTextTransform,
     isSupportedPdfTextTransform,
     selectPdfBackgroundChannels,
