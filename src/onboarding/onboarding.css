@@ -284,6 +284,16 @@ select:focus {
   line-height: 1.48;
 }
 
+.security-note a {
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 8px;
+  color: #0066cc;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .setup-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

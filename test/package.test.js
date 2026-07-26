@@ -43,6 +43,15 @@ test("creates a deterministic source archive from explicitly selected files", as
   assert.equal(Object.hasOwn(parsed.files, "local-secret.txt"), false);
 });
 
+test("source packaging excludes repository automation and store artwork", async () => {
+  const { shouldIncludeSourceFile } = await import("../scripts/package.mjs");
+
+  assert.equal(shouldIncludeSourceFile("src/background.js"), true);
+  assert.equal(shouldIncludeSourceFile("AGENTS.md"), false);
+  assert.equal(shouldIncludeSourceFile(".github/workflows/ci.yml"), false);
+  assert.equal(shouldIncludeSourceFile("store-assets/en/01-page-translation.png"), false);
+});
+
 test("rejects source archive paths outside the project root", async (context) => {
   const temporaryDirectory = await mkdtemp(path.join(tmpdir(), "smart-translation-source-package-"));
   context.after(() => rm(temporaryDirectory, { force: true, recursive: true }));

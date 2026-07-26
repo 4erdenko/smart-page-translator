@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 560">
+  <defs>
+    <linearGradient id="background" x1="80" y1="20" x2="1320" y2="540" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#12182f"/>
+      <stop offset=".52" stop-color="#372b72"/>
+      <stop offset="1" stop-color="#1d6668"/>
+    </linearGradient>
+    <linearGradient id="iconBackground" x1="12" y1="8" x2="84" y2="88" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6157ff"/>
+      <stop offset="1" stop-color="#2a1f91"/>
+    </linearGradient>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="26" stdDeviation="24" flood-color="#090b18" flood-opacity=".5"/>
+    </filter>
+  </defs>
+  <rect width="1400" height="560" rx="48" fill="url(#background)"/>
+  <circle cx="1235" cy="82" r="190" fill="#80f5c8" opacity=".08"/>
+  <circle cx="1130" cy="505" r="250" fill="#fff" opacity=".05"/>
+  <g transform="translate(120 136) scale(3)" filter="url(#shadow)">
+    <rect x="4" y="4" width="88" height="88" rx="25" fill="url(#iconBackground)"/>
+    <path d="M25 28h36v8H49c-1 8-4 15-9 21 4 3 8 5 13 7l-4 7c-6-2-11-5-15-9-5 4-10 7-16 9l-4-7c5-2 10-4 14-7-4-5-7-10-9-16l8-2c2 5 4 9 7 13 4-5 6-10 7-16H25v-8Z" fill="#fff"/>
+    <path d="m57 51 5-3 19 31h-10l-3-6H54l-3 6H41l16-28Zm1 14h6l-4-7-2 7Z" fill="#80f5c8"/>
+  </g>
+  <g transform="translate(520 170)" fill="none" stroke-linecap="round">
+    <path d="M0 0h560" stroke="#fff" stroke-width="42" opacity=".94"/>
+    <path d="M0 86h420" stroke="#d9dcf2" stroke-width="22" opacity=".52"/>
+    <path d="M0 154h500" stroke="#fff" stroke-width="22" opacity=".16"/>
+    <path d="M0 220h620" stroke="#80f5c8" stroke-width="22" opacity=".78"/>
+    <path d="M0 286h470" stroke="#fff" stroke-width="22" opacity=".16"/>
+  </g>
+</svg>

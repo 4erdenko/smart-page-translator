@@ -2,8 +2,11 @@
 
 All notable changes will be documented in this file.
 
-## Unreleased
+## 0.2.0 - 2026-07-26
 
+- Added focused first-run setup with provider key links, connection verification, and automatic compatible-model selection.
+- Added layout-aware PDF translation, bilingual preview, completion state, and local translated-PDF export.
+- Added global default translation views and per-site view overrides.
 - Added original/translated page switching backed by the existing local cache.
 - Added selected-text translation through an isolated page popup and context menu.
 - Added English and Russian WebExtension UI localization with one shared language list.

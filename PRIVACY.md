@@ -1,6 +1,6 @@
 # Privacy Notice
 
-Effective date: July 25, 2026.
+Effective date: July 26, 2026.
 
 Smart Page Translator does not include analytics, advertising, or telemetry.
 

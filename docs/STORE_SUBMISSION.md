@@ -11,6 +11,8 @@
 - Verify that the repository, homepage, and issue-tracker URLs in `package.json` match the public remote.
 - Enable GitHub private vulnerability reporting and publish `PRIVACY.md` at a stable public URL.
 - Confirm the hosted privacy notice contains the Chrome Web Store Limited Use compliance statement.
+- Verify every file in `store-assets/` with `npm run check:store-assets`.
+- Copy localized listing text and reviewer answers from `docs/store/`.
 
 ## Firefox
 
@@ -29,10 +31,29 @@
 - State the single purpose as whole-page translation.
 - Justify all-sites content-script access, `contextMenus`, and `unlimitedStorage`; document the three declared keyboard shortcuts and do not request unrelated permissions.
 - Link the hosted `PRIVACY.md` from the Chrome Web Store listing and complete its data-use disclosures consistently.
-- Prominently disclose page-text and credential transmission before installation and obtain affirmative informed consent.
+- Keep the listing and focused first-run disclosure explicit about page-text, PDF-text, editable-text, and credential transmission.
+- Upload the 128 px package icon, 440×280 promo tile, and at least one current 1280×800 screenshot from `store-assets/`.
+
+## Microsoft Edge
+
+- Upload `artifacts/smart-page-translator-chrome.zip` through Partner Center.
+- Use the same single-purpose, permission, remote-code, data-use, and privacy answers from `docs/store/disclosures.md`.
+- Add both English and Russian listings, each with a description of at least 250 characters.
+- Upload the 300×300 logo and duplicate the promo tiles and localized screenshots across the matching languages.
+- Paste the private functional test steps from `docs/store/reviewer-notes.md` into Notes for certification.
+
+## Opera
+
+- Upload `artifacts/smart-page-translator-chrome.zip` through the Opera Add-ons submission form.
+- Choose Productivity and MPL-2.0, and provide the repository, support, and privacy URLs.
+- Use the localized summary and description from `docs/store/`.
+- Upload clean localized screenshots without browser customizations or unrelated extensions.
+- Document that the package uses Manifest V3 and contains no remote executable code.
 
 ## Release artifacts
 
+- Run `npm run package:stores` once from the reviewed tree to create both browser packages, the Mozilla source package, and `artifacts/SHA256SUMS`.
+- The same Chromium ZIP is used for Chrome, Edge, and Opera; do not fork store-specific runtime code without a verified compatibility need.
 - Sign through the relevant browser store; do not distribute an unsigned ZIP as a permanent Firefox installation.
 - Record SHA-256 checksums for uploaded archives.
 - Tag only the reviewed commit and attach packages generated from that exact revision.

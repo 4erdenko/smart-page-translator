@@ -3,7 +3,7 @@
     "message": "Smart Page Translator"
   },
   "extensionDescription": {
-    "message": "Translates complete web pages with selectable AI providers and a persistent local cache."
+    "message": "Translate complete web pages and PDFs with DeepSeek or OpenAI, bilingual views, and a persistent local cache."
   },
   "extensionShortName": {
     "message": "Smart Translator"
@@ -474,7 +474,10 @@
     "message": "Before connecting"
   },
   "onboardingPrivacyDescription": {
-    "message": "Use a separate API key with a spending limit. The key stays in local extension storage, while text selected for translation is sent to the provider."
+    "message": "Use a separate API key with a spending limit. The key stays in local extension storage. Page text and short context go directly to the chosen provider only when translation runs; fields, selections, and PDF text require an explicit action."
+  },
+  "readPrivacyNotice": {
+    "message": "Read the privacy notice"
   },
   "checkKeyAndStart": {
     "message": "Check key and start"

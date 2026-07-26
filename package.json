@@ -1,8 +1,8 @@
 {
   "name": "smart-page-translator-extension",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "A cross-browser, cached AI page translator for Firefox and Chrome.",
+  "description": "A cross-browser, cached AI page and PDF translator for Firefox and Chromium browsers.",
   "license": "MPL-2.0",
   "repository": {
     "type": "git",
@@ -16,12 +16,14 @@
     "build": "npm run build:firefox && npm run build:chrome",
     "build:chrome": "node scripts/build.mjs --target chrome",
     "build:firefox": "node scripts/build.mjs --target firefox",
-    "check": "npm run lint && npm test && npm run build && npm run check:manifests && npm run lint:firefox",
+    "check": "npm run lint && npm test && npm run build && npm run check:manifests && npm run check:store-assets && npm run lint:firefox",
     "check:manifests": "node scripts/check-manifest.mjs --target firefox && node scripts/check-manifest.mjs --target chrome",
+    "check:store-assets": "node scripts/check-store-assets.mjs",
     "lint": "eslint .",
     "lint:firefox": "node scripts/lint-firefox.mjs",
     "package:chrome": "npm run check && node scripts/package.mjs --target chrome",
     "package:firefox": "npm run check && node scripts/package.mjs --target firefox",
+    "package:stores": "npm run check && node scripts/package.mjs --target stores",
     "package:source": "npm run check && node scripts/package.mjs --target source",
     "test": "node --test"
   },

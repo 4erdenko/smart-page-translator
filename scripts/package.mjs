@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -94,6 +95,13 @@ export async function createSourceArchive(sourceDirectory, relativePaths) {
   return generateArchive(archive);
 }
 
+export function shouldIncludeSourceFile(relativePath) {
+  return Boolean(relativePath)
+    && relativePath !== "AGENTS.md"
+    && !relativePath.startsWith(".github/")
+    && !relativePath.startsWith("store-assets/");
+}
+
 async function listTrackedSourceFiles() {
   const gitOptions = {
     cwd: projectRoot,
@@ -109,10 +117,10 @@ async function listTrackedSourceFiles() {
     throw new Error("Source packaging requires every non-ignored file to be tracked.");
   }
 
-  return trackedFiles.split("\0").filter(Boolean);
+  return trackedFiles.split("\0").filter(shouldIncludeSourceFile);
 }
 
-async function packageTarget(target) {
+export async function packageTarget(target) {
   if (!["chrome", "firefox", "source"].includes(target)) {
     throw new Error("Package target must be firefox, chrome, or source.");
   }
@@ -125,10 +133,34 @@ async function packageTarget(target) {
   await mkdir(artifactDirectory, { recursive: true });
   await writeFile(outputPath, content);
   console.log(`Packaged ${target} archive in ${outputPath}`);
+  return { content, outputPath };
+}
+
+async function packageStores() {
+  const packages = [];
+
+  for (const target of ["firefox", "chrome", "source"]) {
+    packages.push(await packageTarget(target));
+  }
+
+  const checksums = packages
+    .map(({ content, outputPath }) => {
+      const digest = createHash("sha256").update(content).digest("hex");
+      return `${digest}  ${path.basename(outputPath)}`;
+    })
+    .join("\n");
+  const checksumPath = path.join(projectRoot, "artifacts", "SHA256SUMS");
+  await writeFile(checksumPath, `${checksums}\n`);
+  console.log(`Recorded package checksums in ${checksumPath}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
   const targetIndex = process.argv.indexOf("--target");
   const target = targetIndex >= 0 ? process.argv[targetIndex + 1] : "firefox";
-  await packageTarget(target);
+
+  if (target === "stores") {
+    await packageStores();
+  } else {
+    await packageTarget(target);
+  }
 }
