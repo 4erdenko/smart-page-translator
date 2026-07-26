@@ -24,6 +24,7 @@
     cacheMaxEntries: document.querySelector("#cacheMaxEntries"),
     clearCacheButton: document.querySelector("#clearCacheButton"),
     clearKeyButton: document.querySelector("#clearKeyButton"),
+    defaultViewMode: document.querySelector("#defaultViewMode"),
     form: document.querySelector("#settingsForm"),
     keyBadge: document.querySelector("#keyBadge"),
     keyHint: document.querySelector("#keyHint"),
@@ -123,6 +124,7 @@
     currentProvider = response.settings.provider;
     elements.provider.value = currentProvider;
     elements.animationEnabled.checked = response.settings.animationEnabled !== false;
+    elements.defaultViewMode.value = response.settings.defaultViewMode;
     elements.sourceLanguage.value = response.settings.sourceLanguage;
     elements.targetLanguage.value = response.settings.targetLanguage;
     elements.cacheMaxEntries.value = String(response.settings.cacheMaxEntries);
@@ -231,6 +233,7 @@
           animationEnabled: elements.animationEnabled.checked,
           autoTranslateLanguages: elements.autoLanguageInputs.filter(({ checked }) => checked).map(({ value }) => value),
           cacheMaxEntries: Number(elements.cacheMaxEntries.value),
+          defaultViewMode: elements.defaultViewMode.value,
           provider,
           providerModels,
           protectedTerms: elements.protectedTerms.value.split(/\r?\n/u).map((value) => value.trim()).filter(Boolean),

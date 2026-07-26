@@ -230,6 +230,21 @@
   "targetLanguage": {
     "message": "Target language"
   },
+  "defaultTranslationView": {
+    "message": "Default translation view"
+  },
+  "translationOnly": {
+    "message": "Translation only"
+  },
+  "originalAndTranslation": {
+    "message": "Original and translation"
+  },
+  "translationView": {
+    "message": "Translation view"
+  },
+  "followDefaultView": {
+    "message": "Use default ({view})"
+  },
   "automaticTranslation": {
     "message": "Automatic translation"
   },

@@ -32,6 +32,15 @@
           <select id="targetLanguage"></select>
         </label>
 
+        <label class="field" for="siteViewMode">
+          <span data-i18n="translationView">Translation view</span>
+          <select id="siteViewMode">
+            <option value="default" data-i18n="followDefaultView">Follow default</option>
+            <option value="translated" data-i18n="translationOnly">Translation only</option>
+            <option value="bilingual" data-i18n="originalAndTranslation">Original and translation</option>
+          </select>
+        </label>
+
         <div class="status" id="statusBox" data-tone="idle">
           <span class="status-dot"></span>
           <div>

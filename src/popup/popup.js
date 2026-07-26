@@ -15,6 +15,7 @@
     settingsButton: document.querySelector("#settingsButton"),
     siteLabel: document.querySelector("#siteLabel"),
     siteMode: document.querySelector("#siteMode"),
+    siteViewMode: document.querySelector("#siteViewMode"),
     statusBox: document.querySelector("#statusBox"),
     statusDetails: document.querySelector("#statusDetails"),
     statusTitle: document.querySelector("#statusTitle"),
@@ -215,12 +216,23 @@
       ? new URL(site).hostname || t("localFile", null, "Local file")
       : t("restrictedPage", null, "Restricted page");
     elements.siteMode.disabled = !site || privateTab;
+    elements.siteViewMode.disabled = !site || privateTab;
     elements.translateButton.disabled = !site;
 
     const response = await api.runtime.sendMessage({ type: "getSettings", site, includeCacheEntries: true });
     apiConfigured = response.hasApiKey;
     providerLabel = response.providers?.[response.settings.provider]?.label || response.settings.provider;
     elements.siteMode.value = response.siteMode || "auto";
+    elements.siteViewMode.value = response.siteViewMode || "default";
+    elements.siteViewMode.querySelector('[value="default"]').textContent = t(
+      "followDefaultView",
+      {
+        view: response.settings.defaultViewMode === "bilingual"
+          ? t("viewBilingual", null, "Bilingual")
+          : t("viewTranslated", null, "Translated")
+      },
+      `Follow default (${response.settings.defaultViewMode === "bilingual" ? "Bilingual" : "Translated"})`
+    );
     elements.targetLanguage.value = response.settings.targetLanguage;
     updateCacheSummary(response.cacheEntries);
 
@@ -268,6 +280,32 @@
         String(error?.message || error),
         "error"
       );
+    }
+  });
+
+  elements.siteViewMode.addEventListener("change", async () => {
+    if (privateTab) {
+      return;
+    }
+
+    elements.siteViewMode.disabled = true;
+
+    try {
+      await api.runtime.sendMessage({
+        type: "setSiteViewMode",
+        site,
+        tabId: activeTab.id,
+        viewMode: elements.siteViewMode.value
+      });
+    } catch (error) {
+      showStatus(
+        t("couldNotUpdateWebsite", null, "Could not update website"),
+        String(error?.message || error),
+        "error"
+      );
+      await initialize().catch(() => undefined);
+    } finally {
+      elements.siteViewMode.disabled = !site || privateTab;
     }
   });
 

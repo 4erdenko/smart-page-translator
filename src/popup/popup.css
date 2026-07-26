@@ -113,7 +113,8 @@ body[data-tone="error"] .activity-orb i {
 }
 
 select {
-  min-width: 176px;
+  width: 176px;
+  max-width: 60%;
   padding: 8px 28px 8px 10px;
   border: 1px solid #dfdce9;
   border-radius: 10px;

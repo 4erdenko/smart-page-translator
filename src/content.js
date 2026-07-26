@@ -120,6 +120,7 @@
     enabled: false,
     error: "",
     model: "deepseek-v4-flash",
+    preferredViewMode: "translated",
     provider: "deepseek",
     protectedTerms: [],
     siteMode: "auto",
@@ -2207,6 +2208,9 @@
       detectedLanguage: normalizeLanguageCode(detectedLanguage),
       enabled: Boolean(enabled),
       model: String(settings?.model || settings?.providerModels?.[provider] || state.model),
+      preferredViewMode: ["bilingual", "translated"].includes(settings?.viewMode)
+        ? settings.viewMode
+        : "translated",
       provider,
       protectedTerms: Array.isArray(settings?.protectedTerms) ? settings.protectedTerms : [],
       siteMode,
@@ -2218,6 +2222,7 @@
       || next.protectedTerms.join("\u0000") !== state.protectedTerms.join("\u0000")
       || next.sourceLanguage !== state.sourceLanguage
       || next.targetLanguage !== state.targetLanguage;
+    const preferredViewModeChanged = next.preferredViewMode !== state.preferredViewMode;
     const wasEnabled = state.enabled;
 
     if (wasEnabled && (!next.enabled || translationChanged)) {
@@ -2239,14 +2244,26 @@
     state.detectedLanguage = next.detectedLanguage;
     state.enabled = next.enabled;
     state.model = next.model;
+    state.preferredViewMode = next.preferredViewMode;
     state.provider = next.provider;
     state.protectedTerms = next.protectedTerms;
     state.siteMode = next.siteMode;
     state.sourceLanguage = next.sourceLanguage;
     state.targetLanguage = next.targetLanguage;
 
-    if (!next.enabled) {
-      state.viewMode = "translated";
+    if (!next.enabled || !wasEnabled) {
+      state.viewMode = next.preferredViewMode;
+      lastActiveViewMode = next.preferredViewMode;
+    } else if (preferredViewModeChanged) {
+      lastActiveViewMode = next.preferredViewMode;
+
+      if (state.viewMode !== "original") {
+        await showActiveView(next.preferredViewMode);
+
+        if (nextPolicyRevision !== policyRevision) {
+          return undefined;
+        }
+      }
     }
 
     const startTranslation = shouldStartTranslation({
@@ -3124,7 +3141,7 @@
 
     if (message?.type === "cycleViewMode") {
       if (!state.enabled) {
-        return enableTranslation("translated");
+        return enableTranslation();
       }
 
       if (state.viewMode === "original") {

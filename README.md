@@ -9,6 +9,7 @@ Cross-browser Manifest V3 WebExtension for complete, cached website translation.
 - Lets users add exact protected names and terms that must remain unchanged.
 - Translates selected text from a compact, isolated popup without modifying the page.
 - Switches pages between original, translated, and compact bilingual text without another provider request.
+- Sets translation-only or bilingual text as the global default, with optional per-site overrides.
 - Translates a focused text field, or selected rich-editor text, only after an explicit context-menu action or keyboard shortcut.
 - Extracts and translates visual text blocks from a local PDF, previews original and translated pages side by side, and downloads a translated copy whose only searchable text layer is the translation.
 - Supports DeepSeek and OpenAI. First-run setup links directly to each provider's official key page, verifies the key before storing it locally, and selects a compatible model automatically; `.env` files and build-time keys are not used.

@@ -315,8 +315,10 @@ test("content settings do not load the translation cache", async () => {
   assert.equal(Object.hasOwn(contentSettings, "providers"), false);
   assert.equal(Object.hasOwn(contentSettings.settings, "providerModels"), false);
   assert.equal(Object.hasOwn(contentSettings.settings, "siteRules"), false);
+  assert.equal(Object.hasOwn(contentSettings.settings, "siteViewModes"), false);
   assert.equal(contentSettings.site, "https://example.com");
   assert.equal(contentSettings.siteMode, "always");
+  assert.equal(contentSettings.settings.viewMode, "translated");
   assert.equal(harness.storageGetKeys.length, 1);
 
   const uiSettings = await harness.send({
@@ -345,7 +347,63 @@ test("migrates the legacy default cache size to 16,000 phrases", async () => {
 
   assert.equal(response.settings.cacheMaxEntries, 16000);
   assert.equal(harness.storageData.settingsV1.cacheMaxEntries, 16000);
-  assert.equal(harness.storageData.settingsV1.version, 2);
+  assert.equal(harness.storageData.settingsV1.version, 3);
+});
+
+test("preserves an explicit 8,000 phrase cache limit from settings version 2", async () => {
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      settingsV1: {
+        cacheMaxEntries: 8000,
+        version: 2
+      }
+    }
+  });
+  const response = await harness.send({ type: "getSettings" });
+
+  assert.equal(response.settings.cacheMaxEntries, 8000);
+  assert.equal(harness.storageData.settingsV1.cacheMaxEntries, 8000);
+  assert.equal(harness.storageData.settingsV1.version, 3);
+});
+
+test("resolves the global translation view and per-site overrides", async () => {
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    storage: {
+      settingsV1: {
+        defaultViewMode: "bilingual",
+        siteViewModes: {
+          "https://example.com": "translated",
+          "javascript:invalid": "bilingual",
+          "https://invalid-view.example": "original"
+        },
+        version: 2
+      }
+    }
+  });
+
+  const siteSettings = await harness.send(
+    { type: "getSettings" },
+    contentSender("https://example.com/page")
+  );
+  const defaultSettings = await harness.send(
+    { type: "getSettings" },
+    contentSender("https://other.example/page")
+  );
+  const uiSettings = await harness.send({
+    type: "getSettings",
+    site: "https://example.com"
+  });
+
+  assert.equal(siteSettings.settings.viewMode, "translated");
+  assert.equal(defaultSettings.settings.viewMode, "bilingual");
+  assert.equal(uiSettings.settings.defaultViewMode, "bilingual");
+  assert.equal(uiSettings.siteViewMode, "translated");
+  assert.deepEqual(
+    { ...harness.storageData.settingsV1.siteViewModes },
+    { "https://example.com": "translated" }
+  );
 });
 
 test("opens onboarding once for a new installation", async () => {
@@ -354,7 +412,7 @@ test("opens onboarding once for a new installation", async () => {
   await harness.install({ reason: "install", temporary: false });
 
   assert.equal(harness.storageData.settingsV1.cacheMaxEntries, 16000);
-  assert.equal(harness.storageData.onboardingShownVersion, 2);
+  assert.equal(harness.storageData.onboardingShownVersion, 3);
   assert.equal(harness.createdTabs.length, 1);
   assert.equal(
     harness.createdTabs[0].url,
@@ -491,9 +549,13 @@ test("cross-origin frames require their own explicit always rule", async () => {
     fetchImpl: async () => createResponse([]),
     storage: {
       settingsV1: {
+        defaultViewMode: "bilingual",
         siteRules: {
           "https://example.com": "always",
           "https://trusted-frame.example": "always"
+        },
+        siteViewModes: {
+          "https://example.com": "translated"
         }
       }
     }
@@ -542,11 +604,15 @@ test("cross-origin frames require their own explicit always rule", async () => {
   );
 
   assert.equal(sameOriginFrame.siteMode, "always");
+  assert.equal(sameOriginFrame.settings.viewMode, "translated");
   assert.equal(thirdPartyFrame.site, "https://third-party.example");
   assert.equal(thirdPartyFrame.siteMode, "never");
+  assert.equal(thirdPartyFrame.settings.viewMode, "bilingual");
   assert.equal(trustedFrame.siteMode, "always");
+  assert.equal(trustedFrame.settings.viewMode, "bilingual");
   assert.equal(inheritedBlankFrame.site, "https://example.com");
   assert.equal(inheritedBlankFrame.siteMode, "always");
+  assert.equal(inheritedBlankFrame.settings.viewMode, "translated");
   assert.equal(opaqueBlankFrame.site, "");
   assert.equal(opaqueBlankFrame.siteMode, "never");
 });
@@ -629,6 +695,7 @@ test("rejects privileged messages from content scripts", async () => {
     { type: "getCacheStats" },
     { type: "listProviderModels", provider: "deepseek" },
     { type: "setSiteMode", site: "https://example.com", mode: "always" },
+    { type: "setSiteViewMode", site: "https://example.com", viewMode: "bilingual" },
     { type: "testProviderConnection", provider: "deepseek" },
     { type: "updateProviderKey", provider: "deepseek", action: "clear" },
     { type: "updateSettings", settings: { targetLanguage: "en" } }
@@ -662,6 +729,50 @@ test("does not persist website rules selected from a private tab", async () => {
     /private tabs/u
   );
   assert.equal(harness.storageData.settingsV1?.siteRules?.["https://example.com"], undefined);
+});
+
+test("saves and clears a per-site translation view", async () => {
+  const harness = createHarness({ fetchImpl: async () => createResponse([]) });
+
+  const selected = await harness.send({
+    type: "setSiteViewMode",
+    site: "https://example.com/path",
+    tabId: 7,
+    viewMode: "bilingual"
+  });
+  assert.equal(selected.siteViewMode, "bilingual");
+  assert.equal(harness.storageData.settingsV1.siteViewModes["https://example.com"], "bilingual");
+
+  const inherited = await harness.send({
+    type: "setSiteViewMode",
+    site: "https://example.com",
+    tabId: 7,
+    viewMode: "default"
+  });
+  assert.equal(inherited.siteViewMode, "default");
+  assert.equal(harness.storageData.settingsV1.siteViewModes["https://example.com"], undefined);
+});
+
+test("does not persist translation views selected from a private tab", async () => {
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    tabGet: async (tabId) => ({
+      id: tabId,
+      incognito: true,
+      url: "https://example.com/page"
+    })
+  });
+
+  await assert.rejects(
+    harness.send({
+      type: "setSiteViewMode",
+      site: "https://example.com",
+      tabId: 7,
+      viewMode: "bilingual"
+    }),
+    /private tabs/u
+  );
+  assert.equal(harness.storageData.settingsV1?.siteViewModes?.["https://example.com"], undefined);
 });
 
 test("does not read or write the persistent translation cache in private tabs", async () => {
@@ -1096,6 +1207,18 @@ test("switches all page views without destroying translation records", () => {
   assert.match(activeHandler, /type: "text"[\s\S]*type: "attribute"/u);
   assert.match(activeHandler, /state\.viewMode = viewMode;[\s\S]*runViewSwitchSlice\(\)/u);
   assert.match(contentSource, /async function applySettings[\s\S]*await viewSwitchJob\.promise;/u);
+  assert.match(
+    contentSource,
+    /preferredViewMode: \["bilingual", "translated"\]\.includes\(settings\?\.viewMode\)[\s\S]*preferredViewModeChanged[\s\S]*await showActiveView\(next\.preferredViewMode\);/u
+  );
+  assert.match(
+    contentSource,
+    /if \(!next\.enabled \|\| !wasEnabled\) \{\s+state\.viewMode = next\.preferredViewMode;\s+lastActiveViewMode = next\.preferredViewMode;/u
+  );
+  assert.match(
+    contentSource,
+    /if \(message\?\.type === "cycleViewMode"\) \{\s+if \(!state\.enabled\) \{\s+return enableTranslation\(\);/u
+  );
   assert.match(contentSource, /async function showTranslation\(\) \{\s+return showActiveView\("translated"\);/u);
   assert.match(contentSource, /async function showBilingual\(\) \{\s+return showActiveView\("bilingual"\);/u);
 });

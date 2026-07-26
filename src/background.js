@@ -35,11 +35,12 @@
   const CONTEXT_MENU_SELECTION_ID = "translate-selection";
   const CONTEXT_MENU_EDITABLE_ID = "translate-editable";
   const ONBOARDING_VERSION_KEY = "onboardingShownVersion";
-  const SETTINGS_VERSION = 2;
+  const SETTINGS_VERSION = 3;
   const DEFAULT_SETTINGS = Object.freeze({
     animationEnabled: true,
     autoTranslateLanguages: [],
     cacheMaxEntries: 16000,
+    defaultViewMode: "translated",
     provider: "deepseek",
     providerModels: Object.freeze({
       deepseek: PROVIDERS.deepseek.defaultModel,
@@ -47,6 +48,7 @@
     }),
     protectedTerms: [],
     siteRules: {},
+    siteViewModes: {},
     sourceLanguage: "auto",
     targetLanguage: "ru",
     version: SETTINGS_VERSION
@@ -76,6 +78,7 @@
     "getCacheStats",
     "listProviderModels",
     "setSiteMode",
+    "setSiteViewMode",
     "testProviderConnection",
     "updateProviderKey",
     "updateSettings"
@@ -220,6 +223,10 @@
       .filter((language) => language && language !== "auto"))].slice(0, 30);
   }
 
+  function normalizeViewMode(value, fallback = DEFAULT_SETTINGS.defaultViewMode) {
+    return ["bilingual", "translated"].includes(value) ? value : fallback;
+  }
+
   function normalizeProtectedTerms(value) {
     const terms = Array.isArray(value) ? value : [];
     const normalized = new Map();
@@ -270,6 +277,22 @@
     return siteRules;
   }
 
+  function normalizeSiteViewModes(value) {
+    const siteViewModes = {};
+
+    if (value && typeof value === "object") {
+      for (const [site, viewMode] of Object.entries(value)) {
+        const normalizedSite = normalizeSite(site);
+
+        if (normalizedSite && ["bilingual", "translated"].includes(viewMode)) {
+          siteViewModes[normalizedSite] = viewMode;
+        }
+      }
+    }
+
+    return siteViewModes;
+  }
+
   function sanitizeSettings(value) {
     const provider = normalizeProvider(value?.provider);
     const providerModels = normalizeProviderModels(value?.providerModels, value?.model);
@@ -281,10 +304,12 @@
         MAX_CACHE_ENTRIES,
         Math.max(100, Math.round(Number(value?.cacheMaxEntries) || DEFAULT_SETTINGS.cacheMaxEntries))
       ),
+      defaultViewMode: normalizeViewMode(value?.defaultViewMode),
       provider,
       providerModels,
       protectedTerms: normalizeProtectedTerms(value?.protectedTerms),
       siteRules: normalizeSiteRules(value?.siteRules, value?.enabledSites),
+      siteViewModes: normalizeSiteViewModes(value?.siteViewModes),
       sourceLanguage: normalizeLanguage(value?.sourceLanguage, DEFAULT_SETTINGS.sourceLanguage),
       targetLanguage: normalizeLanguage(value?.targetLanguage, DEFAULT_SETTINGS.targetLanguage),
       version: SETTINGS_VERSION
@@ -294,10 +319,11 @@
   async function getSettings() {
     const stored = await api.storage.local.get(SETTINGS_KEY);
     const current = stored[SETTINGS_KEY];
-    const migrated = current && Number(current.version || 0) < SETTINGS_VERSION
+    const currentVersion = Number(current?.version || 0);
+    const migrated = current && currentVersion < SETTINGS_VERSION
       ? {
         ...current,
-        cacheMaxEntries: Number(current.cacheMaxEntries) === 8000
+        cacheMaxEntries: currentVersion < 2 && Number(current.cacheMaxEntries) === 8000
           ? DEFAULT_SETTINGS.cacheMaxEntries
           : current.cacheMaxEntries,
         version: SETTINGS_VERSION
@@ -305,7 +331,7 @@
       : current;
     const settings = sanitizeSettings(migrated ?? DEFAULT_SETTINGS);
 
-    if (current && Number(current.version || 0) < SETTINGS_VERSION) {
+    if (current && currentVersion < SETTINGS_VERSION) {
       await api.storage.local.set({ [SETTINGS_KEY]: settings });
     }
 
@@ -1132,6 +1158,7 @@
     const cacheEntries = includeCacheEntries ? cacheEntryCount : undefined;
     const normalizedSite = normalizeSite(site);
     const siteMode = settings.siteRules[normalizedSite] || "auto";
+    const siteViewMode = settings.siteViewModes[normalizedSite] || "default";
     const providers = Object.fromEntries(Object.entries(PROVIDERS).map(([provider, definition]) => [
       provider,
       {
@@ -1147,10 +1174,12 @@
       providers,
       site: normalizedSite,
       siteMode,
+      siteViewMode,
       settings: {
         animationEnabled: settings.animationEnabled,
         autoTranslateLanguages: settings.autoTranslateLanguages,
         cacheMaxEntries: settings.cacheMaxEntries,
+        defaultViewMode: settings.defaultViewMode,
         model: getSelectedModel(settings),
         provider: settings.provider,
         providerModels: settings.providerModels,
@@ -1175,6 +1204,7 @@
     const siteMode = inheritsTopSite
       ? settings.siteRules[site] || "auto"
       : settings.siteRules[site] === "always" ? "always" : "never";
+    const viewMode = settings.siteViewModes[site] || settings.defaultViewMode;
 
     return {
       site,
@@ -1186,7 +1216,8 @@
         provider: settings.provider,
         protectedTerms: settings.protectedTerms,
         sourceLanguage: settings.sourceLanguage,
-        targetLanguage: settings.targetLanguage
+        targetLanguage: settings.targetLanguage,
+        viewMode
       }
     };
   }
@@ -1204,6 +1235,10 @@
 
     if (patch && Object.hasOwn(patch, "cacheMaxEntries")) {
       settings.cacheMaxEntries = patch.cacheMaxEntries;
+    }
+
+    if (patch && Object.hasOwn(patch, "defaultViewMode")) {
+      settings.defaultViewMode = patch.defaultViewMode;
     }
 
     if (patch && Object.hasOwn(patch, "provider")) {
@@ -1235,18 +1270,18 @@
     return saveSettings(settings);
   }
 
-  async function setSiteMode(site, mode, includeCacheEntries = false, tabId) {
+  async function validateSitePreferenceTarget(site, tabId) {
     const normalizedSite = normalizeSite(site);
 
     if (!normalizedSite) {
-      throw new Error("This page cannot be enabled for translation.");
+      throw new Error("This page cannot save website preferences.");
     }
 
     if (Number.isInteger(tabId)) {
       const tab = await api.tabs.get(tabId);
 
       if (tab?.incognito) {
-        throw new Error("Website rules are not saved from private tabs. Use one-time translation instead.");
+        throw new Error("Website preferences are not saved from private tabs.");
       }
 
       if (normalizeSite(tab?.url || "") !== normalizedSite) {
@@ -1254,12 +1289,31 @@
       }
     }
 
+    return normalizedSite;
+  }
+
+  async function setSiteMode(site, mode, includeCacheEntries = false, tabId) {
+    const normalizedSite = await validateSitePreferenceTarget(site, tabId);
     const settings = await getSettings();
 
     if (mode === "always" || mode === "never") {
       settings.siteRules[normalizedSite] = mode;
     } else {
       delete settings.siteRules[normalizedSite];
+    }
+
+    await saveSettings(settings);
+    return getPublicSettings(normalizedSite, includeCacheEntries);
+  }
+
+  async function setSiteViewMode(site, viewMode, includeCacheEntries = false, tabId) {
+    const normalizedSite = await validateSitePreferenceTarget(site, tabId);
+    const settings = await getSettings();
+
+    if (viewMode === "bilingual" || viewMode === "translated") {
+      settings.siteViewModes[normalizedSite] = viewMode;
+    } else {
+      delete settings.siteViewModes[normalizedSite];
     }
 
     await saveSettings(settings);
@@ -1613,6 +1667,13 @@
         return setSiteMode(
           message.site,
           message.mode,
+          message.includeCacheEntries === true,
+          message.tabId
+        );
+      case "setSiteViewMode":
+        return setSiteViewMode(
+          message.site,
+          message.viewMode,
           message.includeCacheEntries === true,
           message.tabId
         );

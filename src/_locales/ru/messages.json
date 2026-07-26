@@ -230,6 +230,21 @@
   "targetLanguage": {
     "message": "Язык перевода"
   },
+  "defaultTranslationView": {
+    "message": "Режим перевода по умолчанию"
+  },
+  "translationOnly": {
+    "message": "Только перевод"
+  },
+  "originalAndTranslation": {
+    "message": "Оригинал и перевод"
+  },
+  "translationView": {
+    "message": "Режим перевода"
+  },
+  "followDefaultView": {
+    "message": "Как в общих настройках ({view})"
+  },
   "automaticTranslation": {
     "message": "Автоматический перевод"
   },
