@@ -19,14 +19,6 @@ for (const locale of ["en", "ru"]) {
   ]) {
     expectedAssets.set(`store-assets/${locale}/${name}`, [1280, 800]);
   }
-
-  for (const name of [
-    "01-page-translation.png",
-    "03-onboarding.png",
-    "05-pdf-workspace.png"
-  ]) {
-    expectedAssets.set(`store-assets/opera/${locale}/${name}`, [612, 408]);
-  }
 }
 
 function readPngDimensions(buffer, relativePath) {

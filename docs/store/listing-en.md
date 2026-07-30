@@ -24,7 +24,8 @@ Key features:
 - Original, translated, and compact bilingual reading views.
 - Global language rules plus per-site translation and view preferences.
 - Product-description translation with conservative brand and proper-name protection.
-- Explicit translation for selected text and focused editable fields.
+- One configurable native context-menu command for selected text and focused editable fields.
+- An optional compact selection button that is disabled by default.
 - Local PDF parsing, side-by-side preview, and translated PDF download.
 - A persistent, bounded local cache that avoids repeating identical requests.
 - English and Russian extension interfaces.
@@ -33,13 +34,15 @@ Privacy is part of the design. API keys and cached translations stay in extensio
 
 The source code, data flow, build instructions, and third-party notices are public.
 
-## Version 0.2.1 notes
+## Version 0.2.2 notes
 
-Improves provider-consent setup, preformatted page translation, cache persistence and recovery, translated PDF font coverage and status, and deterministic release validation.
+Adds one configurable native translation command for selected text and editable fields. An optional compact selection button is now available and remains disabled by default. Context-menu settings now stay consistent during rapid changes.
 
 ## Public links
 
 - Homepage and support: `https://github.com/4erdenko/smart-page-translator`
 - Issues: `https://github.com/4erdenko/smart-page-translator/issues`
 - Privacy policy: `https://github.com/4erdenko/smart-page-translator/blob/main/PRIVACY.md`
-- Source for version 0.2.1: `https://github.com/4erdenko/smart-page-translator/tree/v0.2.1`
+- Firefox Add-ons: `https://addons.mozilla.org/addon/smart-page-translator/`
+- Chrome Web Store: `https://chromewebstore.google.com/detail/jffbhjmhedkehlopdjepemhmladfeghp`
+- Source for version 0.2.2: `https://github.com/4erdenko/smart-page-translator/tree/v0.2.2`

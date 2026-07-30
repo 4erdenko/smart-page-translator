@@ -2,6 +2,14 @@
 
 All notable changes will be documented in this file.
 
+## 0.2.2 - 2026-07-30
+
+- Added one configurable native context-menu command for selected text and editable fields.
+- Added an optional compact selection button that is disabled by default.
+- Kept manual translation results visible when related settings change.
+- Serialized context-menu updates to prevent stale asynchronous writes from restoring old settings.
+- Limited selection listeners and controls to the websites where they can be used.
+
 ## 0.2.1 - 2026-07-27
 
 - Added explicit provider-data consent before saving or verifying an API key.

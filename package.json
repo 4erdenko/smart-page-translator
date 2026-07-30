@@ -1,6 +1,6 @@
 {
   "name": "smart-page-translator-extension",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "A cross-browser, cached AI page and PDF translator for Firefox and Chromium browsers.",
   "license": "MPL-2.0",

@@ -19,7 +19,7 @@
 - Build with `npm run package:firefox`.
 - Keep the stable Gecko ID and increment the manifest version.
 - Declare `authenticationInfo` and `websiteContent` as required data collection because the user-supplied key and selected page text go directly to the chosen provider.
-- Explain the all-sites content script, explicit selection and editable-field context menus, provider-only host permissions, local cache, PDF workspace, and private-browsing behavior in the AMO listing.
+- Explain the all-sites content script, configurable native context-menu command for selections and editable fields, provider-only host permissions, local cache, PDF workspace, and private-browsing behavior in the AMO listing.
 - Run `npm run package:source` and upload the resulting source ZIP when Mozilla requests source.
 - Tell reviewers to run `npm ci` followed by `npm run build:firefox` with Node.js 24 and npm 11.
 - Include the exact upstream release and source links from `THIRD_PARTY_NOTICES.md` in reviewer notes.
@@ -34,28 +34,11 @@
 - Keep the listing and focused first-run disclosure explicit about page-text, PDF-text, editable-text, and credential transmission.
 - Upload the 128 px package icon, 440×280 promo tile, and at least one current 1280×800 screenshot from `store-assets/`.
 
-## Microsoft Edge
-
-- Upload `artifacts/smart-page-translator-chrome.zip` through Partner Center.
-- Use the same single-purpose, permission, remote-code, data-use, and privacy answers from `docs/store/disclosures.md`.
-- Add both English and Russian listings, each with a description of at least 250 characters.
-- Upload the 300×300 logo and duplicate the promo tiles and localized screenshots across the matching languages.
-- Paste the private functional test steps from `docs/store/reviewer-notes.md` into Notes for certification.
-
-## Opera
-
-- Upload `artifacts/smart-page-translator-chrome.zip` through the Opera Add-ons submission form.
-- Choose Productivity and MPL-2.0, and provide the repository, support, and privacy URLs.
-- Use the localized summary and description from `docs/store/`.
-- Upload clean localized screenshots without browser customizations or unrelated extensions.
-- Document that the package uses Manifest V3 and contains no remote executable code.
-
 ## Release artifacts
 
 - Create an annotated `v<package version>` tag on the reviewed commit, check it out with no staged or unstaged tracked changes, and run `npm run package:stores` once to create both browser packages, the Mozilla source package, and `artifacts/SHA256SUMS`. The command rejects a missing/mismatched tag or dirty tracked tree.
-- The same Chromium ZIP is used for Chrome, Edge, and Opera; do not fork store-specific runtime code without a verified compatibility need.
 - Sign through the relevant browser store; do not distribute an unsigned ZIP as a permanent Firefox installation.
 - Record SHA-256 checksums for uploaded archives.
 - Tag only the reviewed commit and attach packages generated from that exact revision.
 - Link each executable release to its exact public source tag as required by MPL-2.0.
-- Replace the README installation placeholder with signed Firefox and Chrome store links.
+- Verify that the README links to the signed Firefox and Chrome store releases.

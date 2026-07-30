@@ -1,15 +1,13 @@
 # Store Publication Kit
 
-This directory contains copy-and-paste metadata for the first public release.
+This directory contains copy-and-paste metadata for the current public release.
 
 ## Release channels
 
-| Store | Package | Listing copy | Status |
+| Store | Public listing | Package | Listing copy |
 | --- | --- | --- | --- |
-| Chrome Web Store | `artifacts/smart-page-translator-chrome.zip` | English and Russian | Ready for dashboard upload |
-| Firefox Add-ons | `artifacts/smart-page-translator-firefox.zip` | English and Russian | Ready for AMO upload |
-| Microsoft Edge Add-ons | Chrome package | English and Russian | Ready for Partner Center upload |
-| Opera Add-ons | Chrome package | English and Russian | Ready for Opera upload |
+| Firefox Add-ons | [Install](https://addons.mozilla.org/addon/smart-page-translator/) | `artifacts/smart-page-translator-firefox.zip` | English and Russian |
+| Chrome Web Store | [Install](https://chromewebstore.google.com/detail/jffbhjmhedkehlopdjepemhmladfeghp) | `artifacts/smart-page-translator-chrome.zip` | English and Russian |
 
 Brave and Vivaldi install extensions from the Chrome Web Store, so they do not need separate submissions. Safari is not included because it requires a separate Safari Web Extension app wrapper, Xcode project, Apple signing, and platform-specific testing.
 

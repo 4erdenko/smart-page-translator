@@ -1,16 +1,55 @@
-# Smart Page Translator
+<div align="center">
+  <img src="store-assets/common/logo-300.png" width="112" height="112" alt="Smart Page Translator icon">
+  <h1>Smart Page Translator</h1>
+  <p><strong>Complete AI translation for web pages and PDFs.</strong></p>
+  <p>Read in translation or bilingual mode, keep dynamic content in sync, and reuse results from a private local cache.</p>
+  <p>
+    <a href="https://addons.mozilla.org/addon/smart-page-translator/"><img src="https://img.shields.io/badge/Install_for_Firefox-FF7139?style=for-the-badge&amp;logo=firefoxbrowser&amp;logoColor=white" alt="Install for Firefox"></a>
+    <a href="https://chromewebstore.google.com/detail/jffbhjmhedkehlopdjepemhmladfeghp"><img src="https://img.shields.io/badge/Install_for_Chrome-4285F4?style=for-the-badge&amp;logo=googlechrome&amp;logoColor=white" alt="Install for Chrome"></a>
+  </p>
+  <p>
+    <a href="https://github.com/4erdenko/smart-page-translator/actions/workflows/ci.yml"><img src="https://github.com/4erdenko/smart-page-translator/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+    <img src="https://img.shields.io/badge/Manifest-V3-5C6AC4" alt="Manifest V3">
+    <img src="https://img.shields.io/badge/UI-English_%7C_Russian-0A84FF" alt="English and Russian interface">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MPL--2.0-5C2D91" alt="Mozilla Public License 2.0"></a>
+  </p>
+</div>
 
-Cross-browser Manifest V3 WebExtension for complete, cached website translation. One source tree produces reviewable Firefox and Chrome builds without remote executable code.
+![Smart Page Translator preview](store-assets/common/promo-marquee-1400x560.png)
+
+Smart Page Translator is an open-source Manifest V3 extension for Firefox and Chrome. It translates complete websites, dynamic interfaces, selected text, editable fields, and text-based PDFs through a provider selected by the user. The extension has no ads, analytics, telemetry, shared API key, or subscription.
+
+<table>
+  <tr>
+    <td width="33%"><strong>Whole-page coverage</strong><br>Translate dynamic text, product descriptions, controls, labels, and accessibility text.</td>
+    <td width="33%"><strong>Three reading views</strong><br>Switch between the original, translation, and compact bilingual text without another API request.</td>
+    <td width="33%"><strong>Bring your own provider</strong><br>Use DeepSeek or OpenAI with a key that stays in extension-local storage.</td>
+  </tr>
+</table>
+
+## Preview
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="store-assets/en/01-page-translation.png" alt="Whole-page translation"><br><strong>Whole-page translation</strong></td>
+    <td width="50%" align="center"><img src="store-assets/en/02-bilingual-view.png" alt="Bilingual reading view"><br><strong>Bilingual reading</strong></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="store-assets/en/05-pdf-workspace.png" alt="PDF translation workspace"><br><strong>PDF workspace</strong></td>
+    <td width="50%" align="center"><img src="store-assets/en/03-onboarding.png" alt="First-run setup"><br><strong>Fast first-run setup</strong></td>
+  </tr>
+</table>
 
 ## Features
 
 - Translates text nodes, product names, placeholders, image labels, tooltips, accessibility labels, options, and dynamically inserted DOM content.
 - Preserves detected brands, trademarks, model identifiers, and proper names while translating descriptive product text.
 - Lets users add exact protected names and terms that must remain unchanged.
-- Translates selected text from a compact, isolated popup without modifying the page.
+- Translates selected text through one native browser context-menu command without modifying the page.
 - Switches pages between original, translated, and compact bilingual text without another provider request.
 - Sets translation-only or bilingual text as the global default, with optional per-site overrides.
-- Translates a focused text field, or selected rich-editor text, only after an explicit context-menu action or keyboard shortcut.
+- Translates a focused text field, or selected rich-editor text, through the same native context-menu command or a keyboard shortcut.
+- Offers an optional compact button beside selected text. The button is disabled by default and stays hidden on never-translate websites.
 - Extracts and translates visual text blocks from a local PDF, previews original and translated pages side by side, and downloads a translated copy whose only searchable text layer is the translation.
 - Supports DeepSeek and OpenAI. First-run setup links directly to each provider's official key page, verifies the key before storing it locally, and selects a compatible model automatically; `.env` files and build-time keys are not used.
 - Loads the models available to the configured provider account from its `/models` endpoint and filters out audio, image, embedding, moderation, realtime, and other incompatible models.
@@ -24,12 +63,16 @@ Cross-browser Manifest V3 WebExtension for complete, cached website translation.
 
 - Firefox 142 or later.
 - Chrome 102 or later.
-- The Chromium package is prepared for current Microsoft Edge and Opera releases; store certification is still pending.
 - Brave and Vivaldi can install the Chrome Web Store release.
 
 ## Install
 
-Signed store packages are not published yet. Official Firefox, Chrome, Edge, and Opera links will be added here after review and signing. Until then, use the development installation below. Files in `artifacts/` are unsigned test packages and should not be redistributed as official releases.
+Install the signed release from the official browser store:
+
+- [Firefox Add-ons](https://addons.mozilla.org/addon/smart-page-translator/)
+- [Chrome Web Store](https://chromewebstore.google.com/detail/jffbhjmhedkehlopdjepemhmladfeghp)
+
+The first installation opens a focused setup page. Select DeepSeek or OpenAI, create a provider key through the linked official page, paste the key, and choose the target language. The extension verifies the connection before it stores the key locally.
 
 ## Install for development
 
@@ -50,17 +93,17 @@ Chrome:
 2. Open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**.
 3. Select `dist/chrome/`.
 
-The same unpacked Chromium build can be loaded through `edge://extensions` or Opera's extensions page for compatibility testing.
+The first-run page selects a compatible provider model automatically. The same provider, key, and model controls remain available in Settings. Temporary Firefox add-ons are removed when Firefox exits; use the signed store release for dependable persistence across browser restarts.
 
-The first-run page guides you to the selected provider's official API-key page, verifies the connection, and selects a compatible model automatically. The same provider, key, and model controls remain available in Settings. Temporary Firefox add-ons are removed when Firefox exits; a signed installation is required for dependable persistence across full browser restarts.
-
-The first installation opens this setup page automatically. Default shortcuts are:
+Default shortcuts are:
 
 - `Alt+Shift+P` — toggle original and translated page text.
 - `Alt+Shift+U` — cycle original, translated, and bilingual page views.
 - `Alt+Shift+T` — explicitly translate the focused text field or selected rich-editor text.
 
 Browsers may reserve or remap a shortcut. Firefox exposes shortcut editing at `about:addons` under **Manage Extension Shortcuts**; Chrome exposes it at `chrome://extensions/shortcuts`.
+
+Settings can hide the native context-menu command or enable the optional selection button. The native command handles selected page text and editable fields without adding controls to the website.
 
 Open the PDF workspace from the extension popup. PDF bytes and filenames remain in the browser: bundled PDF.js code extracts positioned text locally, and only grouped text blocks are sent after the user presses **Translate document**. The workspace renders the original page, fits each returned translation into its detected region, and can download a new PDF that keeps the page appearance and page sizes. The visual page is flattened locally after the detected source text is masked, then the translated text is added with subsetted embedded fonts. Search, selection, and copying therefore expose the translation without a hidden duplicate source-text layer.
 
@@ -83,7 +126,7 @@ The shared manifest lives in `manifests/base.json`; browser-specific background 
 ## Permissions
 
 - `activeTab` lets the popup identify and message the page on which the user opened it.
-- `contextMenus` adds explicit commands for selected text and editable fields.
+- `contextMenus` adds one configurable native command for selected text and editable fields.
 - `storage` stores provider keys, settings, website rules, and cached translations locally.
 - `unlimitedStorage` prevents the bounded 16 MiB cache from colliding with Chrome's smaller default local-storage quota.
 - The content script matches all websites because translating arbitrary pages is the extension's single purpose.
@@ -113,7 +156,7 @@ For a Mozilla source review, use Node.js 24 and npm 11, run `npm ci`, then run `
 
 ## Support and security
 
-Use the repository bug-report template for reproducible, sanitized problems. Never include API keys, private URLs, account details, or captured page content. Report vulnerabilities through GitHub private vulnerability reporting as described in [SECURITY.md](SECURITY.md).
+Use [GitHub Issues](https://github.com/4erdenko/smart-page-translator/issues) for reproducible, sanitized problems. Never include API keys, private URLs, account details, or captured page content. Report vulnerabilities through GitHub private vulnerability reporting as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

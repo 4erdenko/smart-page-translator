@@ -7,7 +7,7 @@ Translate user-requested website and PDF text into a chosen language, while pres
 ## Permission justifications
 
 - `activeTab`: after the user opens the toolbar popup, identify the active page and send translation or view commands to that tab.
-- `contextMenus`: add explicit Translate selection and Translate this field commands.
+- `contextMenus`: add one user-configurable native translation command for selected text and editable fields.
 - `storage`: keep provider settings and credentials, language and site rules, protected terms, and cached translations in extension-local storage.
 - `unlimitedStorage`: allow the extension's independently bounded 16 MiB cache to exceed Chromium's smaller default `storage.local` quota without losing settings or credentials.
 - `<all_urls>` content-script matches: discover translatable text and dynamic DOM updates on whichever website the user chooses. The extension does not request history, cookies, or network interception.
@@ -46,6 +46,4 @@ Certify:
 
 - **Chrome Web Store:** website content, authentication information, and user-provided content; privacy policy required; Limited Use certification required.
 - **Firefox Add-ons:** `websiteContent` and `authenticationInfo` are required data-collection permissions in the manifest; privacy policy required.
-- **Microsoft Edge Add-ons:** accesses and transmits personal information: Yes; remote code: No; privacy policy required.
-- **Opera Add-ons:** category Productivity; license MPL-2.0; support and privacy URLs required for a transparent listing.
 - **Payment disclosure:** the extension is free and has no subscription, but provider API usage may require payment. Select the store option indicating a non-free external service may be required.

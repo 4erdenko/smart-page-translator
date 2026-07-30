@@ -2,9 +2,9 @@
 
 ## Version and build
 
-Version: 0.2.1
+Version: 0.2.2
 
-Source revision: tag `v0.2.1`
+Source revision: tag `v0.2.2`
 
 Build on Ubuntu 24.04 ARM64 or macOS with Node.js 24 and npm 11:
 
@@ -25,10 +25,12 @@ Translation requires a DeepSeek or OpenAI API key. Provide a temporary spend-lim
 2. Open a public text page, use the toolbar popup, and select Translate once.
 3. Confirm the page can switch among Original, Translation, and Bilingual without another provider request.
 4. Add an Always or Never website rule and reload the page.
-5. Select text and use the small Translate action or context menu.
-6. Focus a form field and use Translate this field; the result is not cached.
+5. Select page text and use the native Translate text command.
+6. Focus a form field and use the same native command; the result is not cached.
 7. Open the PDF workspace, choose a small text-based PDF, press Translate document, and download the translated copy.
-8. Open Settings to clear the cache and inspect provider, language, site, protected-term, animation, and cache controls.
+8. Open Settings, enable the optional selection button, and confirm that it appears after text selection.
+9. Disable the context-menu command and confirm that the browser removes it.
+10. Inspect provider, language, site, protected-term, animation, and cache controls.
 
 Automatic translation excludes form values and editable text. Cross-origin frames require their own explicit Always rule. Private-window translations bypass persistent cache storage and cannot save per-site rules.
 
