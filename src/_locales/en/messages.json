@@ -167,8 +167,8 @@
   "extensionError": {
     "message": "Extension error"
   },
-  "contextTranslateSelection": {
-    "message": "Translate selection"
+  "contextTranslateText": {
+    "message": "Translate text"
   },
   "translateSelection": {
     "message": "Translate"
@@ -305,6 +305,24 @@
   "textShimmerHint": {
     "message": "Briefly highlight only text that is being translated."
   },
+  "manualTranslationControls": {
+    "message": "Manual translation controls"
+  },
+  "manualTranslationControlsDescription": {
+    "message": "Choose how explicit translation commands appear in the browser."
+  },
+  "nativeContextMenu": {
+    "message": "Browser context-menu command"
+  },
+  "nativeContextMenuHint": {
+    "message": "Show one native command for selected text and editable fields."
+  },
+  "selectionButton": {
+    "message": "Button beside selected text"
+  },
+  "selectionButtonHint": {
+    "message": "Show a compact Translate button after text selection. Disabled on never-translate websites."
+  },
   "protectedTerms": {
     "message": "Protected names and terms"
   },
@@ -336,7 +354,7 @@
     "message": "Privacy note"
   },
   "privacyDescription": {
-    "message": "Automatic page translation skips form values and editable text. A field is sent only when you explicitly choose Translate this field, and that result is not cached."
+    "message": "Automatic page translation skips form values and editable text. A field is sent only when you explicitly choose Translate text from its context menu. That result is not cached."
   },
   "saveSettings": {
     "message": "Save settings"
@@ -409,9 +427,6 @@
   },
   "openPdf": {
     "message": "PDF"
-  },
-  "contextTranslateEditable": {
-    "message": "Translate this field"
   },
   "editableSelectionRequired": {
     "message": "Focus a text field, or select text inside a rich editor, then try again."
@@ -513,7 +528,7 @@
     "message": "Advanced settings"
   },
   "advancedSettingsDescription": {
-    "message": "Automation, protected terms, motion, and local cache limits."
+    "message": "Manual controls, automation, protected terms, motion, and local cache limits."
   },
   "onboardingConsentLabel": {
     "message": "I agree that my API key will be sent to the selected provider to verify and authorize access. Page text translated automatically or manually, including short context, will also be sent to that provider. Editable fields, selections, and PDF text are sent only after an explicit action."

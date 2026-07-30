@@ -34,8 +34,11 @@
   const CACHE_INDEX_DIRTY_KEY = "translationCacheIndexDirtyV1";
   const CACHE_INDEX_VERSION = 1;
   const CACHE_INDEX_DIRTY_BYTES = 1 + estimateCacheEntryBytes("", true, CACHE_INDEX_DIRTY_KEY);
-  const CONTEXT_MENU_SELECTION_ID = "translate-selection";
-  const CONTEXT_MENU_EDITABLE_ID = "translate-editable";
+  const CONTEXT_MENU_ID = "translate-text";
+  const LEGACY_CONTEXT_MENU_IDS = Object.freeze([
+    "translate-selection",
+    "translate-editable"
+  ]);
   const ONBOARDING_VERSION_KEY = "onboardingShownVersion";
   const SETTINGS_VERSION = 4;
   const PROVIDER_DATA_CONSENT_VERSION = 1;
@@ -43,6 +46,7 @@
     animationEnabled: true,
     autoTranslateLanguages: [],
     cacheMaxEntries: 16000,
+    contextMenuEnabled: true,
     defaultViewMode: "translated",
     provider: "deepseek",
     providerModels: Object.freeze({
@@ -51,6 +55,7 @@
     }),
     providerDataConsentVersion: 0,
     protectedTerms: [],
+    selectionButtonEnabled: false,
     siteRules: {},
     siteViewModes: {},
     sourceLanguage: "auto",
@@ -316,6 +321,7 @@
         MAX_CACHE_ENTRIES,
         Math.max(100, Math.round(Number(value?.cacheMaxEntries) || DEFAULT_SETTINGS.cacheMaxEntries))
       ),
+      contextMenuEnabled: value?.contextMenuEnabled !== false,
       defaultViewMode: normalizeViewMode(value?.defaultViewMode),
       provider,
       providerModels,
@@ -323,6 +329,7 @@
         ? PROVIDER_DATA_CONSENT_VERSION
         : 0,
       protectedTerms: normalizeProtectedTerms(value?.protectedTerms),
+      selectionButtonEnabled: value?.selectionButtonEnabled === true,
       siteRules: normalizeSiteRules(value?.siteRules, value?.enabledSites),
       siteViewModes: normalizeSiteViewModes(value?.siteViewModes),
       sourceLanguage: normalizeLanguage(value?.sourceLanguage, DEFAULT_SETTINGS.sourceLanguage),
@@ -1725,12 +1732,14 @@
         animationEnabled: settings.animationEnabled,
         autoTranslateLanguages: settings.autoTranslateLanguages,
         cacheMaxEntries: settings.cacheMaxEntries,
+        contextMenuEnabled: settings.contextMenuEnabled,
         defaultViewMode: settings.defaultViewMode,
         model: getSelectedModel(settings),
         provider: settings.provider,
         providerDataConsentVersion: settings.providerDataConsentVersion,
         providerModels: settings.providerModels,
         protectedTerms: settings.protectedTerms,
+        selectionButtonEnabled: settings.selectionButtonEnabled,
         siteRules: settings.siteRules,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage
@@ -1762,6 +1771,7 @@
         model: getSelectedModel(settings),
         provider: settings.provider,
         protectedTerms: settings.protectedTerms,
+        selectionButtonEnabled: settings.selectionButtonEnabled,
         sourceLanguage: settings.sourceLanguage,
         targetLanguage: settings.targetLanguage,
         viewMode
@@ -1770,51 +1780,68 @@
   }
 
   async function updateSettings(patch) {
-    return mutateSettings((settings) => {
+    const settings = await mutateSettings((currentSettings) => {
       if (patch && Object.hasOwn(patch, "animationEnabled")) {
-        settings.animationEnabled = patch.animationEnabled;
+        currentSettings.animationEnabled = patch.animationEnabled;
       }
 
       if (patch && Object.hasOwn(patch, "autoTranslateLanguages")) {
-        settings.autoTranslateLanguages = patch.autoTranslateLanguages;
+        currentSettings.autoTranslateLanguages = patch.autoTranslateLanguages;
       }
 
       if (patch && Object.hasOwn(patch, "cacheMaxEntries")) {
-        settings.cacheMaxEntries = patch.cacheMaxEntries;
+        currentSettings.cacheMaxEntries = patch.cacheMaxEntries;
+      }
+
+      if (patch && Object.hasOwn(patch, "contextMenuEnabled")) {
+        currentSettings.contextMenuEnabled = patch.contextMenuEnabled;
       }
 
       if (patch && Object.hasOwn(patch, "defaultViewMode")) {
-        settings.defaultViewMode = patch.defaultViewMode;
+        currentSettings.defaultViewMode = patch.defaultViewMode;
       }
 
       if (patch && Object.hasOwn(patch, "provider")) {
-        settings.provider = patch.provider;
+        currentSettings.provider = patch.provider;
       }
 
       if (patch && Object.hasOwn(patch, "providerModels")) {
-        settings.providerModels = patch.providerModels;
+        currentSettings.providerModels = patch.providerModels;
       } else if (patch && Object.hasOwn(patch, "model")) {
-        settings.providerModels[settings.provider] = patch.model;
+        currentSettings.providerModels[currentSettings.provider] = patch.model;
       }
 
       if (patch && Object.hasOwn(patch, "protectedTerms")) {
-        settings.protectedTerms = patch.protectedTerms;
+        currentSettings.protectedTerms = patch.protectedTerms;
+      }
+
+      if (patch && Object.hasOwn(patch, "selectionButtonEnabled")) {
+        currentSettings.selectionButtonEnabled = patch.selectionButtonEnabled;
       }
 
       if (patch && Object.hasOwn(patch, "siteRules")) {
-        settings.siteRules = patch.siteRules;
+        currentSettings.siteRules = patch.siteRules;
       }
 
       if (patch && Object.hasOwn(patch, "sourceLanguage")) {
-        settings.sourceLanguage = patch.sourceLanguage;
+        currentSettings.sourceLanguage = patch.sourceLanguage;
       }
 
       if (patch && Object.hasOwn(patch, "targetLanguage")) {
-        settings.targetLanguage = patch.targetLanguage;
+        currentSettings.targetLanguage = patch.targetLanguage;
       }
 
-      return settings;
+      return currentSettings;
     });
+
+    if (patch && Object.hasOwn(patch, "contextMenuEnabled")) {
+      await runSettingsWrite(async () => {
+        const currentSettings = await getSettings();
+        await registerContextMenu(currentSettings.contextMenuEnabled);
+      });
+    }
+
+    return settings;
   }
 
   async function validateSitePreferenceTarget(site, tabId) {
@@ -2110,8 +2137,8 @@
     return { cancelled: requests.length };
   }
 
-  async function registerContextMenu() {
-    for (const menuId of [CONTEXT_MENU_SELECTION_ID, CONTEXT_MENU_EDITABLE_ID]) {
+  async function registerContextMenu(enabled = true) {
+    for (const menuId of [CONTEXT_MENU_ID, ...LEGACY_CONTEXT_MENU_IDS]) {
       try {
         await api.contextMenus.remove(menuId);
       } catch {
@@ -2119,15 +2146,14 @@
       }
     }
 
+    if (!enabled) {
+      return;
+    }
+
     api.contextMenus.create({
-      contexts: ["selection"],
-      id: CONTEXT_MENU_SELECTION_ID,
-      title: api.i18n.getMessage("contextTranslateSelection") || "Translate selection"
-    });
-    api.contextMenus.create({
-      contexts: ["editable"],
-      id: CONTEXT_MENU_EDITABLE_ID,
-      title: api.i18n.getMessage("contextTranslateEditable") || "Translate this field"
+      contexts: ["selection", "editable"],
+      id: CONTEXT_MENU_ID,
+      title: api.i18n.getMessage("contextTranslateText") || "Translate text"
     });
   }
 
@@ -2135,11 +2161,10 @@
     await storageAccessPromise;
     const stored = await api.storage.local.get([SETTINGS_KEY, ONBOARDING_VERSION_KEY]);
 
-    if (!stored[SETTINGS_KEY]) {
-      await saveSettings(DEFAULT_SETTINGS);
-    }
-
-    await registerContextMenu();
+    const settings = stored[SETTINGS_KEY]
+      ? await getSettings()
+      : await saveSettings(DEFAULT_SETTINGS);
+    await registerContextMenu(settings.contextMenuEnabled);
 
     if (details?.reason === "install" && stored[ONBOARDING_VERSION_KEY] !== SETTINGS_VERSION) {
       await api.storage.local.set({ [ONBOARDING_VERSION_KEY]: SETTINGS_VERSION });
@@ -2152,27 +2177,21 @@
       return;
     }
 
-    if (info.menuItemId === CONTEXT_MENU_SELECTION_ID
-      && info.editable !== true
-      && typeof info.selectionText === "string") {
-      void api.tabs.sendMessage(
-        tab.id,
-        {
-          type: "translateSelection",
-          text: info.selectionText
-        },
-        { frameId: info.frameId ?? 0 }
-      ).catch(() => undefined);
-    } else if (info.menuItemId === CONTEXT_MENU_EDITABLE_ID && info.editable === true) {
-      void api.tabs.sendMessage(
-        tab.id,
-        {
-          type: "translateEditable",
-          text: typeof info.selectionText === "string" ? info.selectionText : ""
-        },
-        { frameId: info.frameId ?? 0 }
-      ).catch(() => undefined);
+    if (info.menuItemId !== CONTEXT_MENU_ID) {
+      return;
     }
+
+    const message = info.editable === true
+      ? { type: "translateEditable" }
+      : {
+        type: "translateSelection",
+        text: typeof info.selectionText === "string" ? info.selectionText : ""
+      };
+    void api.tabs.sendMessage(
+      tab.id,
+      message,
+      { frameId: info.frameId ?? 0 }
+    ).catch(() => undefined);
   });
 
   api.commands.onCommand.addListener(async (command) => {

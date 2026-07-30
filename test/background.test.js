@@ -128,6 +128,7 @@ function createHarness({
   let installedListener;
   const actionCalls = [];
   const accessLevelCalls = [];
+  const contextMenuCalls = [];
   const storageGetKeys = [];
   const tabMessages = [];
   const createdTabs = [];
@@ -145,8 +146,12 @@ function createHarness({
       }
     },
     contextMenus: {
-      create() {},
-      async remove() {},
+      create(options) {
+        contextMenuCalls.push({ method: "create", options });
+      },
+      async remove(id) {
+        contextMenuCalls.push({ id, method: "remove" });
+      },
       onClicked: {
         addListener(listener) {
           contextMenuListener = listener;
@@ -289,6 +294,7 @@ function createHarness({
   return {
     accessLevelCalls,
     actionCalls,
+    contextMenuCalls,
     createdTabs,
     install(details) {
       return installedListener(details);
@@ -352,6 +358,7 @@ test("content settings do not load the translation cache", async () => {
   assert.equal(Object.hasOwn(contentSettings.settings, "providerModels"), false);
   assert.equal(Object.hasOwn(contentSettings.settings, "siteRules"), false);
   assert.equal(Object.hasOwn(contentSettings.settings, "siteViewModes"), false);
+  assert.equal(contentSettings.settings.selectionButtonEnabled, false);
   assert.equal(contentSettings.site, "https://example.com");
   assert.equal(contentSettings.siteMode, "always");
   assert.equal(contentSettings.settings.viewMode, "translated");
@@ -365,6 +372,8 @@ test("content settings do not load the translation cache", async () => {
   assert.equal(uiSettings.cacheEntries, 1);
   assert.ok(uiSettings.cacheBytes > 0);
   assert.equal(uiSettings.cacheMaxBytes, translationCore.MAX_CACHE_BYTES);
+  assert.equal(uiSettings.settings.contextMenuEnabled, true);
+  assert.equal(uiSettings.settings.selectionButtonEnabled, false);
   assert.equal(harness.storageGetKeys.includes(null), true);
   assert.equal(Object.hasOwn(harness.storageData, "translationCacheV1"), false);
   assert.equal(Object.keys(getStoredCache(harness.storageData)).length, 1);
@@ -879,11 +888,24 @@ test("opens onboarding once for a new installation", async () => {
   await harness.install({ reason: "install", temporary: false });
 
   assert.equal(harness.storageData.settingsV1.cacheMaxEntries, 16000);
+  assert.equal(harness.storageData.settingsV1.contextMenuEnabled, true);
+  assert.equal(harness.storageData.settingsV1.selectionButtonEnabled, false);
   assert.equal(harness.storageData.onboardingShownVersion, 4);
   assert.equal(harness.createdTabs.length, 1);
   assert.equal(
     harness.createdTabs[0].url,
     "chrome-extension://test/onboarding/onboarding.html"
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.contextMenuCalls.at(-1))),
+    {
+      method: "create",
+      options: {
+        contexts: ["selection", "editable"],
+        id: "translate-text",
+        title: "Translate text"
+      }
+    }
   );
 });
 
@@ -919,7 +941,7 @@ test("routes the selection context menu to the originating frame", async () => {
 
   harness.sendContextMenu({
     frameId: 3,
-    menuItemId: "translate-selection",
+    menuItemId: "translate-text",
     selectionText: "Selected text"
   }, { id: 21 });
   await new Promise((resolve) => setImmediate(resolve));
@@ -934,39 +956,117 @@ test("routes the selection context menu to the originating frame", async () => {
   });
 });
 
-test("does not translate context-menu selections from editable fields", async () => {
-  const harness = createHarness({ fetchImpl: async () => createResponse([]) });
-
-  harness.sendContextMenu({
-    editable: true,
-    frameId: 0,
-    menuItemId: "translate-selection",
-    selectionText: "Private draft"
-  }, { id: 21 });
-  await new Promise((resolve) => setImmediate(resolve));
-
-  assert.deepEqual(harness.tabMessages, []);
-});
-
-test("routes explicit editable translation without reusing the selection command", async () => {
+test("routes the native context-menu command from editable fields", async () => {
   const harness = createHarness({ fetchImpl: async () => createResponse([]) });
 
   harness.sendContextMenu({
     editable: true,
     frameId: 2,
-    menuItemId: "translate-editable",
+    menuItemId: "translate-text",
     selectionText: "Private draft"
   }, { id: 21 });
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.deepEqual(JSON.parse(JSON.stringify(harness.tabMessages.at(-1))), {
-    message: {
-      type: "translateEditable",
-      text: "Private draft"
-    },
+    message: { type: "translateEditable" },
     options: { frameId: 2 },
     tabId: 21
   });
+});
+
+test("adds and removes the native translation command from settings", async () => {
+  const harness = createHarness({ fetchImpl: async () => createResponse([]) });
+
+  const disabledSettings = await harness.send({
+    type: "updateSettings",
+    settings: {
+      contextMenuEnabled: false,
+      selectionButtonEnabled: true
+    }
+  });
+  const contentSettings = await harness.send(
+    { type: "getSettings" },
+    contentSender()
+  );
+  assert.equal(disabledSettings.settings.contextMenuEnabled, false);
+  assert.equal(disabledSettings.settings.selectionButtonEnabled, true);
+  assert.equal(contentSettings.settings.selectionButtonEnabled, true);
+  assert.equal(
+    harness.contextMenuCalls.filter(({ method }) => method === "create").length,
+    0
+  );
+  assert.deepEqual(
+    harness.contextMenuCalls.filter(({ method }) => method === "remove").map(({ id }) => id),
+    ["translate-text", "translate-selection", "translate-editable"]
+  );
+
+  await harness.send({
+    type: "updateSettings",
+    settings: { contextMenuEnabled: true }
+  });
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.contextMenuCalls.at(-1))),
+    {
+      method: "create",
+      options: {
+        contexts: ["selection", "editable"],
+        id: "translate-text",
+        title: "Translate text"
+      }
+    }
+  );
+});
+
+test("keeps the native command aligned with the latest overlapping settings save", async () => {
+  let releaseFirstBroadcast;
+  let resolveFirstBroadcastStarted;
+  let broadcastCount = 0;
+  const firstBroadcastStarted = new Promise((resolve) => {
+    resolveFirstBroadcastStarted = resolve;
+  });
+  const firstBroadcastGate = new Promise((resolve) => {
+    releaseFirstBroadcast = resolve;
+  });
+  const harness = createHarness({
+    fetchImpl: async () => createResponse([]),
+    async tabSendMessage(_tabId, message) {
+      if (message.type !== "settingsChanged") {
+        return;
+      }
+
+      broadcastCount += 1;
+
+      if (broadcastCount === 1) {
+        resolveFirstBroadcastStarted();
+        await firstBroadcastGate;
+      }
+    }
+  });
+  const disablePromise = harness.send({
+    type: "updateSettings",
+    settings: { contextMenuEnabled: false }
+  });
+  await firstBroadcastStarted;
+  const enablePromise = harness.send({
+    type: "updateSettings",
+    settings: { contextMenuEnabled: true }
+  });
+  await enablePromise;
+  releaseFirstBroadcast();
+  await disablePromise;
+
+  assert.equal(harness.storageData.settingsV1.contextMenuEnabled, true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.contextMenuCalls.at(-1))),
+    {
+      method: "create",
+      options: {
+        contexts: ["selection", "editable"],
+        id: "translate-text",
+        title: "Translate text"
+      }
+    }
+  );
 });
 
 test("routes browser commands to the active top frame", async () => {
@@ -2060,6 +2160,37 @@ test("selection translation is bounded and does not mutate selected page text", 
   assert.match(contentSource, /selectionHost\.attachShadow\(\{ mode: "closed" \}\)/u);
   assert.match(contentSource.slice(routeStart, routeEnd), /closeSelectionUi\(\);/u);
   assert.match(contentSource.slice(viewportStart, viewportEnd), /closeSelectionUi\(\);/u);
+});
+
+test("the optional selection button is disabled by default and removed on excluded websites", () => {
+  const settingsStart = contentSource.indexOf("async function applySettings(");
+  const settingsEnd = contentSource.indexOf("async function applyPolicy(", settingsStart);
+  const settingsHandler = contentSource.slice(settingsStart, settingsEnd);
+  const closeActionStart = contentSource.indexOf("function closeSelectionAction()");
+  const closeActionEnd = contentSource.indexOf("function ensureSelectionRoot()", closeActionStart);
+  const closeActionHandler = contentSource.slice(closeActionStart, closeActionEnd);
+  const syncStart = contentSource.indexOf("function syncSelectionButtonListener()");
+  const syncEnd = contentSource.indexOf("function handleSelectionPointerDown(", syncStart);
+  const syncHandler = contentSource.slice(syncStart, syncEnd);
+  const initializationStart = contentSource.indexOf(
+    'document.addEventListener("visibilitychange"'
+  );
+  const initialization = contentSource.slice(initializationStart);
+
+  assert.match(contentSource, /selectionButtonEnabled: false/u);
+  assert.match(
+    settingsHandler,
+    /selectionButtonEnabled: settings\?\.selectionButtonEnabled === true/u
+  );
+  assert.match(
+    syncHandler,
+    /state\.selectionButtonEnabled && state\.siteMode !== "never"/u
+  );
+  assert.match(closeActionHandler, /selectionRoot\?\.querySelector\("\.action"\)/u);
+  assert.match(syncHandler, /closeSelectionAction\(\)/u);
+  assert.doesNotMatch(syncHandler, /closeSelectionUi\(\)/u);
+  assert.match(syncHandler, /document\.removeEventListener\("pointerup"/u);
+  assert.doesNotMatch(initialization, /document\.addEventListener\("pointerup"/u);
 });
 
 test("returns authoritative cache statistics without storage byte accounting", async () => {

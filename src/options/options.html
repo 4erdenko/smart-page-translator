@@ -93,11 +93,38 @@
           <summary>
             <span>
               <strong data-i18n="advancedSettings">Advanced settings</strong>
-              <small data-i18n="advancedSettingsDescription">Automation, protected terms, motion, and local cache limits.</small>
+              <small data-i18n="advancedSettingsDescription">Manual controls, automation, protected terms, motion, and local cache limits.</small>
             </span>
           </summary>
 
           <div class="advanced-content">
+            <section class="card">
+              <div class="section-heading">
+                <div>
+                  <h2 data-i18n="manualTranslationControls">Manual translation controls</h2>
+                  <p data-i18n="manualTranslationControlsDescription">Choose how explicit translation commands appear in the browser.</p>
+                </div>
+              </div>
+
+              <label class="toggle-setting" for="contextMenuEnabled">
+                <span>
+                  <strong data-i18n="nativeContextMenu">Browser context-menu command</strong>
+                  <small data-i18n="nativeContextMenuHint">Show one native command for selected text and editable fields.</small>
+                </span>
+                <input id="contextMenuEnabled" type="checkbox">
+                <i aria-hidden="true"></i>
+              </label>
+
+              <label class="toggle-setting" for="selectionButtonEnabled">
+                <span>
+                  <strong data-i18n="selectionButton">Button beside selected text</strong>
+                  <small data-i18n="selectionButtonHint">Show a compact Translate button after text selection. Disabled on never-translate websites.</small>
+                </span>
+                <input id="selectionButtonEnabled" type="checkbox">
+                <i aria-hidden="true"></i>
+              </label>
+            </section>
+
             <section class="card automation-card">
               <div class="section-heading">
                 <div>
@@ -127,7 +154,7 @@
                 </label>
               </div>
 
-              <label class="motion-setting" for="animationEnabled">
+              <label class="toggle-setting" for="animationEnabled">
                 <span>
                   <strong data-i18n="textShimmer">Text shimmer</strong>
                   <small data-i18n="textShimmerHint">Briefly highlight only text that is being translated.</small>

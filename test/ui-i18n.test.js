@@ -61,6 +61,18 @@ test("provider consent covers automatic and manual page translation", () => {
   }
 });
 
+test("privacy copy names the current editable context-menu command", () => {
+  for (const messages of [englishMessages, russianMessages]) {
+    assert.equal(
+      messages.privacyDescription.message.includes(messages.contextTranslateText.message),
+      true
+    );
+  }
+
+  assert.doesNotMatch(englishMessages.privacyDescription.message, /Translate this field/u);
+  assert.doesNotMatch(russianMessages.privacyDescription.message, /Перевести это поле/u);
+});
+
 test("onboarding consent also covers a previously saved provider key", () => {
   assert.match(englishMessages.onboardingConsentLabel.message, /my API key will be sent/iu);
   assert.match(russianMessages.onboardingConsentLabel.message, /мой API-ключ будет отправлен/iu);
@@ -128,7 +140,7 @@ test("keeps shipped locales complete and covers referenced UI messages", () => {
       .map((match) => match[1]),
     ...[...source.matchAll(/\bt\("([^"]+)"/gu)].map((match) => match[1]),
     ...[...source.matchAll(/__MSG_([a-zA-Z0-9_]+)__/gu)].map((match) => match[1]),
-    "contextTranslateSelection"
+    "contextTranslateText"
   ]);
 
   assert.deepEqual(

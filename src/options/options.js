@@ -36,6 +36,7 @@
     cacheMaxEntries: document.querySelector("#cacheMaxEntries"),
     clearCacheButton: document.querySelector("#clearCacheButton"),
     clearKeyButton: document.querySelector("#clearKeyButton"),
+    contextMenuEnabled: document.querySelector("#contextMenuEnabled"),
     defaultViewMode: document.querySelector("#defaultViewMode"),
     form: document.querySelector("#settingsForm"),
     keyBadge: document.querySelector("#keyBadge"),
@@ -48,6 +49,7 @@
     provider: document.querySelector("#provider"),
     refreshModelsButton: document.querySelector("#refreshModelsButton"),
     saveStatus: document.querySelector("#saveStatus"),
+    selectionButtonEnabled: document.querySelector("#selectionButtonEnabled"),
     sourceLanguage: document.querySelector("#sourceLanguage"),
     targetLanguage: document.querySelector("#targetLanguage"),
     testButton: document.querySelector("#testButton")
@@ -152,6 +154,7 @@
     currentProvider = response.settings.provider;
     elements.provider.value = currentProvider;
     elements.animationEnabled.checked = response.settings.animationEnabled !== false;
+    elements.contextMenuEnabled.checked = response.settings.contextMenuEnabled !== false;
     elements.defaultViewMode.value = response.settings.defaultViewMode;
     elements.sourceLanguage.value = response.settings.sourceLanguage;
     elements.targetLanguage.value = response.settings.targetLanguage;
@@ -163,6 +166,7 @@
       used: formatMiB(response.cacheBytes)
     }, `${response.cacheEntries || 0} phrases · ${formatMiB(response.cacheBytes)} / ${formatMiB(cacheMaximumBytes)}`);
     elements.protectedTerms.value = (response.settings.protectedTerms || []).join("\n");
+    elements.selectionButtonEnabled.checked = response.settings.selectionButtonEnabled === true;
 
     for (const input of elements.autoLanguageInputs) {
       input.checked = automaticLanguages.has(input.value);
@@ -283,10 +287,12 @@
           animationEnabled: elements.animationEnabled.checked,
           autoTranslateLanguages: elements.autoLanguageInputs.filter(({ checked }) => checked).map(({ value }) => value),
           cacheMaxEntries: Number(elements.cacheMaxEntries.value),
+          contextMenuEnabled: elements.contextMenuEnabled.checked,
           defaultViewMode: elements.defaultViewMode.value,
           provider,
           providerModels,
           protectedTerms: elements.protectedTerms.value.split(/\r?\n/u).map((value) => value.trim()).filter(Boolean),
+          selectionButtonEnabled: elements.selectionButtonEnabled.checked,
           siteRules: buildSiteRules(),
           sourceLanguage: elements.sourceLanguage.value,
           targetLanguage: elements.targetLanguage.value

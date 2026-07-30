@@ -130,6 +130,7 @@
   let routeScanTimer;
   let scanTimer;
   let selectionHost;
+  let selectionPointerUpEnabled = false;
   let selectionRequestRevision = 0;
   let selectionRoot;
   let subtreeScanTimer;
@@ -159,6 +160,7 @@
     preferredViewMode: "translated",
     provider: "deepseek",
     protectedTerms: [],
+    selectionButtonEnabled: false,
     siteMode: "auto",
     sourceLanguage: "auto",
     targetLanguage: "ru",
@@ -2540,6 +2542,7 @@
         : "translated",
       provider,
       protectedTerms: Array.isArray(settings?.protectedTerms) ? settings.protectedTerms : [],
+      selectionButtonEnabled: settings?.selectionButtonEnabled === true,
       siteMode,
       sourceLanguage: String(settings?.sourceLanguage || state.sourceLanguage),
       targetLanguage: String(settings?.targetLanguage || state.targetLanguage)
@@ -2575,9 +2578,11 @@
     state.provider = next.provider;
     state.protectedTerms = next.protectedTerms;
     protectedTermIndex = undefined;
+    state.selectionButtonEnabled = next.selectionButtonEnabled;
     state.siteMode = next.siteMode;
     state.sourceLanguage = next.sourceLanguage;
     state.targetLanguage = next.targetLanguage;
+    syncSelectionButtonListener();
 
     if (!next.enabled || !wasEnabled) {
       state.viewMode = next.preferredViewMode;
@@ -2973,6 +2978,7 @@
   }
 
   function destroySelectionUi() {
+    document.removeEventListener("pointerdown", handleSelectionPointerDown, true);
     selectionHost?.remove();
     selectionHost = undefined;
     selectionRoot = undefined;
@@ -2981,6 +2987,12 @@
   function closeSelectionUi() {
     selectionRequestRevision += 1;
     destroySelectionUi();
+  }
+
+  function closeSelectionAction() {
+    if (selectionRoot?.querySelector(".action")) {
+      closeSelectionUi();
+    }
   }
 
   function ensureSelectionRoot() {
@@ -3064,6 +3076,7 @@
     `;
     selectionRoot.append(style);
     document.documentElement.append(selectionHost);
+    document.addEventListener("pointerdown", handleSelectionPointerDown, true);
     return selectionRoot;
   }
 
@@ -3473,17 +3486,44 @@
   }
 
   function handleSelectionPointerUp(event) {
-    if (selectionHost && event.composedPath().includes(selectionHost)) {
+    if (!state.selectionButtonEnabled
+      || state.siteMode === "never"
+      || selectionHost && event.composedPath().includes(selectionHost)) {
       return;
     }
 
     setTimeout(() => {
+      if (!state.selectionButtonEnabled || state.siteMode === "never") {
+        return;
+      }
+
       const details = getSelectionDetails();
 
       if (details) {
         showSelectionAction(details);
       }
     }, 0);
+  }
+
+  function syncSelectionButtonListener() {
+    const shouldEnable = state.selectionButtonEnabled && state.siteMode !== "never";
+
+    if (shouldEnable === selectionPointerUpEnabled) {
+      if (!shouldEnable) {
+        closeSelectionAction();
+      }
+
+      return;
+    }
+
+    selectionPointerUpEnabled = shouldEnable;
+
+    if (shouldEnable) {
+      document.addEventListener("pointerup", handleSelectionPointerUp, true);
+    } else {
+      document.removeEventListener("pointerup", handleSelectionPointerUp, true);
+      closeSelectionAction();
+    }
   }
 
   function handleSelectionPointerDown(event) {
@@ -3585,8 +3625,6 @@
   window.addEventListener("scroll", handleViewportMovement, { capture: true, passive: true });
 
   document.addEventListener("visibilitychange", handleVisibilityChange);
-  document.addEventListener("pointerdown", handleSelectionPointerDown, true);
-  document.addEventListener("pointerup", handleSelectionPointerUp, true);
   observeRoot(document);
   void refreshPolicy();
 })();
