@@ -46,7 +46,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "addons-linter": "10.9.0",
+    "addons-linter": "10.10.0",
     "esbuild": "0.28.1",
     "eslint": "10.8.0",
     "globals": "17.7.0",
